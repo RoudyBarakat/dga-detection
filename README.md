@@ -35,6 +35,10 @@ papers/         related papers (PDF)
 It holds 439,974 domains: 219,987 legitimate (Tranco top 1M) and 219,987 DGA
 (Mendeley 2025 + Kaggle 2021), with 300 to 3,000 domains per DGA family.
 
+## Contributing
+
+All changes go through a branch and a pull request; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Setup
 
 ```
