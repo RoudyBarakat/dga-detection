@@ -1,0 +1,26 @@
+# Raw data: large files with their own licenses (see data/raw/README.md)
+data/raw/*
+!data/raw/README.md
+
+# Intermediate data, rebuilt by src/data/build_dataset.py
+data/processed/domains_merged.csv.gz
+
+# LaTeX build files
+proposal/*.aux
+proposal/*.bbl
+proposal/*.blg
+proposal/*.log
+proposal/*.out
+proposal/*.synctex.gz
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

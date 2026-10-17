@@ -1,0 +1,48 @@
+{
+  "rows": 439974,
+  "labels": {
+    "dga": 219987,
+    "legit": 219987
+  },
+  "families": 102,
+  "family_size": {
+    "min": 300,
+    "median": 3000.0,
+    "max": 3000,
+    "at_cap": 54
+  },
+  "tlds_per_dga_family": {
+    "median": 3.5,
+    "single_tld_families": 23
+  },
+  "legit": {
+    "domains": 219987,
+    "length_mean": 13.8,
+    "length_min_max": [
+      4,
+      60
+    ],
+    "entropy_mean": 2.8,
+    "digit_ratio_mean": 0.038,
+    "n_tlds": 792,
+    "top_tld": [
+      "com",
+      0.42
+    ]
+  },
+  "dga": {
+    "domains": 219987,
+    "length_mean": 19.1,
+    "length_min_max": [
+      6,
+      93
+    ],
+    "entropy_mean": 3.18,
+    "digit_ratio_mean": 0.148,
+    "n_tlds": 235,
+    "top_tld": [
+      "com",
+      0.24
+    ]
+  }
+}
