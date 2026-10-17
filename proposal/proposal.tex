@@ -1,0 +1,192 @@
+% Format: max 3 pages excluding references, single column.
+% Every paper, dataset, library and model used must be in refs.bib AND cited in the text.
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xurl}
+
+\setlist{nosep,leftmargin=*}
+\setlength{\parskip}{0.4em}
+\setlength{\parindent}{0pt}
+
+\title{\vspace{-2.2em}\textbf{DGA Classifier from Domain Names:\\Family-First or Direct Binary?}}
+\author{
+  Roudy Barakat \quad \texttt{rtb07@mail.aub.edu} \\
+  Abdo Sebailli \quad \texttt{ams86@mail.aub.edu} \\[0.3em]
+  \small American University of Beirut
+}
+\date{\vspace{-1.5em}}
+
+\begin{document}
+\maketitle
+
+\section{Problem and Motivation}
+Malware uses Domain Generation Algorithms (DGAs) to generate many domains from a
+shared seed, so infected hosts can reach the attacker without a hard-coded
+address that defenders could block~\cite{plohmann2016dgarchive}. Real detection
+also uses network signals such as the NXDOMAIN rate and query
+periodicity~\cite{antonakakis2012pleiades}; this project focuses on detecting
+DGAs from the domain name alone. The difficulty is that ``DGA'' is not one
+pattern: some families produce random strings (\texttt{gqspwpsurdun.ru},
+CryptoLocker) or hex hashes (\texttt{2c3f1e3326cca35b757ec704b2413a30.org},
+Bamital), while others join dictionary words (\texttt{kneemanualgirl.com},
+\texttt{whetherspread.net}) and look much closer to legitimate names.
+
+\textbf{Question.} When the final decision is DGA vs.\ legitimate, should a
+classifier first learn the individual DGA families (each family + legitimate,
+with the prediction collapsed to DGA/legitimate) or learn DGA vs.\ legitimate
+directly?
+
+\textbf{Why it matters.} The answer is for teams that build name-based DGA
+filters, for example in DNS resolvers or security products, where a model must
+judge a single query before any connection is made. If family-first training
+wins, family labels are worth collecting even when only a binary decision is
+needed, and simpler models may become accurate enough to deploy. If it does
+not, the simpler binary setup is enough.
+
+\textbf{Goal.} For each model we evaluate, measure the difference in macro-F1 on
+the DGA/legitimate decision between family-first and direct binary training, on
+the same test set and averaged over 5 random seeds. We count family-first as
+better when its mean macro-F1 is higher by more than the standard deviation
+across seeds.
+
+\section{Impact}
+\textbf{If it succeeds.} Teams that build name-based DGA filters get a clear
+rule for how to train them: if family-first wins, it is worth collecting and
+maintaining family labels even when only a DGA/legitimate verdict is shipped;
+if both setups tie, the cheaper binary labels are enough. The per-family results
+also show which kinds of DGA (random-string or dictionary-based) a name-only
+detector can and cannot catch, which tells analysts where to expect blind spots.
+
+\textbf{If it fails.} If neither setup separates some families from legitimate
+domains, in particular dictionary-based ones, that is evidence that the name
+alone does not carry enough signal for them. Detection would then need network
+traffic features, such as the NXDOMAIN rate, the periodicity of queries, and how
+many distinct, previously unseen domains a single host
+queries~\cite{antonakakis2012pleiades}. Knowing which families need these
+signals is itself a useful result.
+
+\textbf{Risks of using the result.}
+\begin{itemize}
+  \item \emph{Errors do not cost the same.} A missed DGA domain (false negative)
+  leaves an infected host talking to its attacker. A legitimate domain flagged
+  as DGA (false positive) blocks a real service and adds to alert fatigue. Since
+  almost all real DNS traffic is legitimate, even a small false-positive rate
+  produces many false alarms.
+  \item \emph{Bias in the data.} Legitimate examples come from a popularity
+  ranking (Tranco~\cite{lepochat2019tranco}), which over-represents popular
+  sites. Legitimate but unusual names, such as non-English, short or
+  machine-generated CDN hostnames, may be flagged unfairly. Families with fewer
+  than 300 known domains are left out of our data, so our results say nothing
+  about them.
+  \item \emph{Limited validity.} We test only families seen in training.
+  Attackers can change their algorithms, so results do not guarantee detection
+  of new or adversarial DGAs.
+\end{itemize}
+
+\section{Related Work}
+% TODO (after the literature review): at least 5 papers/projects on the problem,
+% data or method. For each: key methods and results in a few sentences, then
+% what we take from it and what we do differently.
+
+\section{Data}
+\textbf{Sources.} We combine two DGA sources and one legitimate source into one
+table that gives, for each domain, its label (DGA/legitimate) and its family.
+\begin{itemize}
+  \item \emph{DGA (main):} ``Legitimate domains and DGA categorized
+  morphologically and by families'' by Greg{\'o}rio and Cansian, Mendeley Data
+  v1, 2025, \url{https://data.mendeley.com/datasets/nhvyvytn2h/1}, license
+  CC~BY~4.0~\cite{gregorio2025dataset}. We use its 3{,}090{,}661 DGA domains,
+  collected from the DGArchive feed~\cite{plohmann2016dgarchive} (28~Sep--28~Oct
+  2025) and labelled with 160 families.
+  \item \emph{DGA (extra):} Kaggle ``DGA dataset'' by C.~Givre (v1, 2021,
+  \url{https://www.kaggle.com/datasets/gtkcyber/dga-dataset}, license not
+  stated, used for academic research only)~\cite{givre2021kaggle}. We use its
+  80{,}000 DGA domains (7 family labels).
+  \item \emph{Legitimate:} the Tranco top 1M list~\cite{lepochat2019tranco}
+  (list \texttt{64VVX}, \url{https://tranco-list.eu/list/64VVX}), which ranks
+  pay-level domains by combining the rankings of five providers (Chrome UX Report, Farsight,
+  Majestic, Cloudflare Radar, Cisco Umbrella) over 17~Sep--16~Oct 2026.
+\end{itemize}
+The legitimate parts of the two DGA datasets (Majestic and Alexa) are not used,
+so all legitimate domains come from one documented ranking.
+
+\textbf{Size, features and target.} The dataset we use has 439{,}974 domains:
+219{,}987 legitimate and 219{,}987 DGA from 102 families, with 300 to 3{,}000
+domains per family (54 families have 3{,}000), so the largest family is at most
+10 times the smallest (Fig.~\ref{fig:data}, Table~\ref{tab:stats}). The only
+model input is the domain string (4 to 93 characters; a--z, 0--9, `-' and
+`.'); any numerical features are derived from it. The targets are the binary
+label (DGA/legitimate) and the family (\texttt{legit} or one of the 102 DGA
+families). Data were loaded with pandas~\cite{mckinney2010pandas} and plotted
+with Matplotlib~\cite{hunter2007matplotlib}.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/data_overview.pdf}
+  \vspace{-1.8em}
+  \caption{(a) Number of legitimate and DGA domains; (b) number of domains in
+  each of the 102 DGA families; (c) domain length of legitimate and DGA domains.}
+  \label{fig:data}
+\end{figure}
+
+\begin{table}[h]
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \caption{Statistics per class. Entropy is the Shannon entropy (bits) of the
+  characters before the TLD; digit ratio is the share of digits in the same part.}
+  \label{tab:stats}
+  \begin{tabular}{lrrrrrrl}
+    \toprule
+    Class & Domains & Families & Mean length & Entropy & Digit ratio & TLDs & Top TLD \\
+    \midrule
+    Legitimate & 219{,}987 & --  & 13.8 & 2.80 & 0.038 & 792 & .com (42\%) \\
+    DGA        & 219{,}987 & 102 & 19.1 & 3.18 & 0.148 & 235 & .com (24\%) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Missing values, noise and biases.} There are no empty cells. We found:
+\begin{itemize}
+  \item \emph{Label conflicts:} 330 domains are in both Tranco and a DGA list.
+  Some are short DGA names that coincide with real sites (e.g.\ \texttt{qsnatch}
+  generates 3--4 letter names); others are clearly generated
+  (e.g.\ \texttt{pywolwnvd.biz}, family \texttt{m0yv}) and likely entered
+  Tranco through the DNS traffic of infected machines. We drop all 330.
+  \item \emph{Noise:} 141 duplicate DGA domains, 6 Tranco wildcard entries
+  (e.g.\ \texttt{\_wildcard\_.ph}) and one domain containing a line break. The
+  Kaggle \texttt{domain} column is truncated at hyphens for some rows, so we
+  use its \texttt{host} column.
+  \item \emph{Family names:} no DGA domain appears in both DGA sources (they are
+  years apart), so Kaggle labels were matched by domain shape: \texttt{newgoz}
+  and \texttt{gameoverdga} $\rightarrow$ \texttt{gameover}, \texttt{goz}
+  $\rightarrow$ the GameOver P2P family, \texttt{nivdort} kept as a new family.
+  \item \emph{Biases:} Tranco favours popular sites; each DGA family uses few
+  TLDs (median 3.5, and 23 families use a single one, vs.\ 792 for legitimate
+  domains), so the TLD alone may act as a shortcut; DGA data cover two short
+  periods (around 2016 and 2025).
+\end{itemize}
+
+\textbf{Preprocessing and balancing.} We lower-case and validate domains and
+drop conflicts and duplicates, which leaves 999{,}664 legitimate and
+3{,}170{,}189 DGA domains from 161 families of very different sizes (2 to
+519{,}280 domains). We then balance: we keep the families with at least 300
+domains (59 smaller families are left out), sample at most 3{,}000 domains per
+family, and draw the same number of legitimate domains uniformly at random from
+the cleaned Tranco list. The remaining 10$\times$ family imbalance is handled
+with class weights in the loss.
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}
