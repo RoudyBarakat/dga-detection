@@ -18,19 +18,21 @@ data/
   processed/    built datasets (not committed, rebuilt by the scripts below)
 src/
   data/         build, balance and explore the dataset; dataset.py loads and splits it
-  models/       baseline.py: majority class (Model 0) and logistic regression (Model 1)
+notebooks/
+  01_data_loading.ipynb   load, split and weight the dataset
+  02_baseline.ipynb       majority class (Model 0) and logistic regression (Model 1)
 proposal/       LaTeX proposal (proposal.tex, refs.bib, figures/, proposal.pdf)
 ```
 
 ## Setup
 
-Requires Python 3.10 or newer.
+We use a conda environment with Python 3.12:
 
 ```
 git clone https://github.com/RoudyBarakat/dga-detection.git
 cd dga-detection
-python -m venv .venv
-.venv\Scripts\activate        # Windows; on Linux/macOS: source .venv/bin/activate
+conda create -n ml_aub python=3.12
+conda activate ml_aub
 pip install -r requirements.txt
 ```
 
@@ -62,28 +64,24 @@ It holds 1,999,335 domains: all 999,664 legitimate domains (Tranco top 1M) and
 DGA family. The cap of 29,120 is chosen so that DGA and legitimate domains are equal
 in number.
 
-## Loading the data
+## Notebooks
 
-```python
-from src.data.dataset import load_splits
-train, val, test = load_splits()   # 80/10/10, stratified by family, fixed seed
-```
-
-Each split has the columns `domain`, `label` and `family`; `train` also has `weight`
-(legitimate and DGA weigh half each; within DGA, proportional to 1/sqrt(family size)).
-
-## Baseline
+After building the data, start Jupyter from the repository root and open the
+notebooks in `notebooks/`:
 
 ```
-python -m src.models.baseline                     # binary setup, validation set
-python -m src.models.baseline --setup family      # family-first, collapsed to DGA/legit
-python -m src.models.baseline --no-tld            # ablation without the TLD
-python -m src.models.baseline --sample 100000     # quick run on 100k training rows
+jupyter notebook
 ```
 
-It prints macro-F1, DGA precision and recall, ROC-AUC and recall per DGA family for
-Model 0 and Model 1. Add `--test` only for the final results. On the full training
-set, the family setup takes much longer than the binary one.
+- `01_data_loading.ipynb` loads the dataset with `src/data/dataset.py`: an 80/10/10
+  train/validation/test split, stratified by family with a fixed seed, and sample
+  weights (legitimate and DGA weigh half each; within DGA, proportional to
+  1/sqrt(family size)). All models use this loader, so they see the same rows.
+- `02_baseline.ipynb` trains Model 0 (majority class) and Model 1 (logistic regression
+  on character 1-3-grams) in the binary and family-first setups, with and without
+  the TLD, and reports macro-F1, DGA precision and recall, ROC-AUC and recall per DGA
+  family on the validation set. It trains on a 100k-row sample by default; set
+  `SAMPLE = None` for the full training set (the family setup then takes much longer).
 
 ## Contributing
 
