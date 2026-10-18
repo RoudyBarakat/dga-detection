@@ -94,9 +94,41 @@ signals is itself a useful result.
 \end{itemize}
 
 \section{Related Work}
-% TODO (after the literature review): at least 5 papers/projects on the problem,
-% data or method. For each: key methods and results in a few sentences, then
-% what we take from it and what we do differently.
+\citet{woodbridge2016lstm} introduced deep learning for DGA detection with a
+character-level LSTM trained on Alexa domains and 30 DGA families. They built a
+binary model and a separate family model: the binary model reached an AUC of
+0.9993, but the family model's macro-F1 was only 0.54, rising to 0.96 when
+similar families were grouped. We adopt macro-F1, and their grouping result
+suggests that the labels matter. They never collapsed the family model back into
+a DGA/legitimate detector, which is the comparison we make.
+
+\citet{gregorio2024incremental} classified 61 DGArchive families with a
+character-level CNN, reaching an average F1 of 84\%, with some families at 0\%.
+Their model has no legitimate class, so it cannot be used as a detector. We reuse
+this CNN, add the legitimate class, and test whether confusions between DGA
+families still matter once predictions are collapsed to DGA/legitimate.
+
+\citet{torrealba2025deepdga} proposed DeepDGA, which combines a character-level
+BiLSTM with word embeddings for binary detection on 25 families. It exceeds 0.97
+precision on dictionary-based DGAs, where feature-based models stay below 0.89.
+We take dictionary DGAs as the hardest case and report them separately. They
+close that gap with a bigger architecture; we test whether richer labels help
+simpler models.
+
+\citet{shahzad2021dga} compared LSTM, BiLSTM and GRU for binary detection on
+over two million domains. The LSTM reached 87\% accuracy and an AUC of about
+0.98, with little difference between the three. We follow their preprocessing
+(removing duplicates after stripping the TLD) and their 80/10/10
+train/validation/test split. Since changing the architecture barely mattered, we
+change the training labels instead, and report per-family results, which they do
+not.
+
+\citet{dahal2019autoencoded} compressed character-count vectors with an
+autoencoder and classified them with a neural network or an SVM on 11 DGA
+families. They reached 88\% accuracy, which fell to 78\% on families not seen in
+training. We use character counts, as they do, as a simple input for our
+baseline. They target unseen families, while we focus on known ones; their drop
+shows the limit of our stratified split.
 
 \section{Data}
 \textbf{Sources.} We combine two DGA sources and one legitimate source into one
