@@ -51,10 +51,6 @@ def main(balanced_path, out_dir):
         "tlds_per_dga_family": {"median": float(tlds_per_family.median()),
                                 "single_tld_families": int((tlds_per_family == 1).sum())},
         "other_dga": int(fam.get("other_dga", 0)),
-        "splits": df["split"].value_counts().to_dict(),
-        "dga_weight_max_over_min": round(float(
-            df.loc[df["label"] == "dga", "weight"].astype(float).max()
-            / df.loc[df["label"] == "dga", "weight"].astype(float).min()), 1),
     }
     for lab in LABELS:
         g = df[df["label"] == lab]

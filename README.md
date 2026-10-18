@@ -24,20 +24,19 @@ papers/         related papers (PDF)
 
 ## Dataset
 
-`data/processed/domains_balanced.csv.gz` has five columns:
+`data/processed/domains_balanced.csv.gz` has three columns:
 
 | column | values |
 |---|---|
 | `domain` | the full domain name, e.g. `kneemanualgirl.com` |
 | `label` | `legit` or `dga` |
 | `family` | `legit`, `other_dga` (the 59 families with fewer than 300 domains), or one of 102 DGA families (e.g. `cryptolocker`) |
-| `split` | `train`, `val` or `test` (80/10/10, stratified by family) |
-| `weight` | sample weight: legitimate and DGA weigh half each; within DGA, proportional to 1/sqrt(family size); mean 1 |
 
 It holds 1,999,335 domains: all 999,664 legitimate domains (Tranco top 1M) and
 999,671 DGA domains (Mendeley 2025 + Kaggle 2021), with 300 to 29,120 domains per
 DGA family. The cap of 29,120 is chosen so that DGA and legitimate domains are equal
-in number.
+in number. The train/validation/test split and the sample
+weights are done in the training code.
 
 ## Contributing
 

@@ -16,12 +16,6 @@
     "single_tld_families": 23
   },
   "other_dga": 5073,
-  "splits": {
-    "train": 1599486,
-    "val": 199936,
-    "test": 199913
-  },
-  "dga_weight_max_over_min": 9.9,
   "legit": {
     "domains": 999664,
     "length_mean": 13.7,
