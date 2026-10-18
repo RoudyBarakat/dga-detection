@@ -1,48 +1,55 @@
 {
-  "rows": 408990,
+  "rows": 1999335,
   "labels": {
-    "legit": 204495,
-    "dga": 204495
+    "dga": 999671,
+    "legit": 999664
   },
-  "families": 97,
+  "families": 103,
   "family_size": {
     "min": 300,
-    "median": 3000.0,
-    "max": 3000,
-    "at_cap": 49
+    "median": 3840.0,
+    "max": 29120,
+    "at_cap": 23
   },
   "tlds_per_dga_family": {
-    "median": 3.0,
-    "single_tld_families": 33
+    "median": 4.0,
+    "single_tld_families": 23
   },
+  "other_dga": 5073,
+  "splits": {
+    "train": 1599486,
+    "val": 199936,
+    "test": 199913
+  },
+  "dga_weight_max_over_min": 9.9,
   "legit": {
-    "domains": 204495,
-    "length_mean": 14.1,
+    "domains": 999664,
+    "length_mean": 13.7,
     "length_min_max": [
       4,
       68
     ],
-    "entropy_mean": 2.85,
+    "entropy_mean": 2.79,
     "digit_ratio_mean": 0.038,
-    "n_tlds": 625,
+    "n_tlds": 1030,
     "top_tld": [
       "com",
-      0.47
+      0.42
     ]
   },
   "dga": {
-    "domains": 204495,
-    "length_mean": 19.2,
+    "domains": 999671,
+    "length_mean": 18.4,
     "length_min_max": [
       6,
       93
     ],
-    "entropy_mean": 3.18,
-    "digit_ratio_mean": 0.133,
-    "n_tlds": 230,
+    "entropy_mean": 3.17,
+    "digit_ratio_mean": 0.149,
+    "n_tlds": 273,
     "top_tld": [
       "com",
-      0.28
+      0.23
     ]
   }
 }

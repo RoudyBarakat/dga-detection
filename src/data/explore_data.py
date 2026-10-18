@@ -50,6 +50,11 @@ def main(balanced_path, out_dir):
                         "max": int(fam.max()), "at_cap": int((fam == fam.max()).sum())},
         "tlds_per_dga_family": {"median": float(tlds_per_family.median()),
                                 "single_tld_families": int((tlds_per_family == 1).sum())},
+        "other_dga": int(fam.get("other_dga", 0)),
+        "splits": df["split"].value_counts().to_dict(),
+        "dga_weight_max_over_min": round(float(
+            df.loc[df["label"] == "dga", "weight"].astype(float).max()
+            / df.loc[df["label"] == "dga", "weight"].astype(float).min()), 1),
     }
     for lab in LABELS:
         g = df[df["label"] == lab]
@@ -75,9 +80,9 @@ def main(balanced_path, out_dir):
     axes[0].set_title("(a) Class balance")
 
     axes[1].fill_between(range(fam.size), fam.values, step="mid", color=COLORS["dga"])
-    axes[1].set_ylim(bottom=0)
+    axes[1].set_yscale("log")
     axes[1].set_xlabel("DGA family (sorted by size)")
-    axes[1].set_ylabel("domains")
+    axes[1].set_ylabel("domains (log scale)")
     axes[1].set_title(f"(b) Domains per family ({fam.size} families)")
 
     for lab in LABELS:

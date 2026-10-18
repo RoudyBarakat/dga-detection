@@ -131,43 +131,32 @@ baseline. They target unseen families, while we focus on known ones; their drop
 shows the limit of our stratified split.
 
 \section{Data}
-\textbf{Sources.} We combine two DGA sources and one legitimate source into one
-table that gives, for each domain, its label (DGA/legitimate) and its family.
+\textbf{Sources.}
 \begin{itemize}
-  \item \emph{DGA (main):} ``Legitimate domains and DGA categorized
-  morphologically and by families'' by Greg{\'o}rio and Cansian, Mendeley Data
-  v1, 2025, \url{https://data.mendeley.com/datasets/nhvyvytn2h/1}, license
-  CC~BY~4.0~\cite{gregorio2025dataset}. We use its 3{,}090{,}661 DGA domains,
-  collected from the DGArchive feed~\cite{plohmann2016dgarchive} (28~Sep--28~Oct
-  2025) and labelled with 160 families.
-  \item \emph{DGA (extra):} Kaggle ``DGA dataset'' by C.~Givre (v1, 2021,
-  \url{https://www.kaggle.com/datasets/gtkcyber/dga-dataset}, license not
-  stated, used for academic research only)~\cite{givre2021kaggle}. We use its
-  80{,}000 DGA domains (7 family labels).
-  \item \emph{Legitimate:} the Tranco top 1M list~\cite{lepochat2019tranco}
-  (list \texttt{64VVX}, \url{https://tranco-list.eu/list/64VVX}), which ranks
-  pay-level domains by combining the rankings of five providers (Chrome UX Report, Farsight,
-  Majestic, Cloudflare Radar, Cisco Umbrella) over 17~Sep--16~Oct 2026.
+  \item \emph{DGA:} Greg{\'o}rio and Cansian, Mendeley Data v1, 2025, CC~BY~4.0,
+  \url{https://data.mendeley.com/datasets/nhvyvytn2h/1}~\cite{gregorio2025dataset}:
+  3{,}090{,}661 domains in 160 families, from DGArchive~\cite{plohmann2016dgarchive}
+  (Sep--Oct 2025).
+  \item \emph{DGA:} C.~Givre, Kaggle ``DGA dataset'' v1, 2021, license not stated
+  (academic use), \url{https://www.kaggle.com/datasets/gtkcyber/dga-dataset}~\cite{givre2021kaggle}:
+  80{,}000 domains in 7 families.
+  \item \emph{Legitimate:} Tranco top 1M~\cite{lepochat2019tranco}, list
+  \texttt{64VVX} (17~Sep--16~Oct 2026), \url{https://tranco-list.eu/list/64VVX}.
+  The legitimate rows of the two DGA datasets are not used.
 \end{itemize}
-The legitimate parts of the two DGA datasets (Majestic and Alexa) are not used,
-so all legitimate domains come from one documented ranking.
 
-\textbf{Size, features and target.} The dataset we use has 408{,}990 domains:
-204{,}495 legitimate and 204{,}495 DGA from 97 families, with 300 to 3{,}000
-domains per family (49 families have 3{,}000), so the largest family is at most
-10 times the smallest (Fig.~\ref{fig:data}, Table~\ref{tab:stats}). The only
-model input is the domain name without its TLD (1 to 89 characters; a--z, 0--9,
-`-' and `.'); any numerical features are derived from it. The targets are the binary
-label (DGA/legitimate) and the family (\texttt{legit} or one of the 97 DGA
-families). Data were loaded with pandas~\cite{mckinney2010pandas} and plotted
-with Matplotlib~\cite{hunter2007matplotlib}.
+\textbf{Size, input and target.} 1{,}999{,}335 domains: 999{,}664 legitimate and
+999{,}671 DGA in 103 families (Fig.~\ref{fig:data}, Table~\ref{tab:stats}). The
+input is the full domain name, TLD included (4--93 characters); all features are
+derived from it. The targets are the binary label and the family (\texttt{legit}
+or one of 103). We use pandas~\cite{mckinney2010pandas} and
+Matplotlib~\cite{hunter2007matplotlib}.
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=\linewidth]{figures/data_overview.pdf}
   \vspace{-1.8em}
-  \caption{(a) Number of legitimate and DGA domains; (b) number of domains in
-  each of the 97 DGA families; (c) domain length of legitimate and DGA domains.}
+  \caption{(a) Class sizes; (b) domains per DGA family (log scale); (c) domain length.}
   \label{fig:data}
 \end{figure}
 
@@ -175,54 +164,35 @@ with Matplotlib~\cite{hunter2007matplotlib}.
   \centering
   \footnotesize
   \setlength{\tabcolsep}{4pt}
-  \caption{Statistics per class. Entropy is the Shannon entropy (bits) of the
-  characters before the TLD; digit ratio is the share of digits in the same part.}
+  \caption{Statistics per class. Entropy (bits) and digit ratio are computed on
+  the part before the TLD.}
   \label{tab:stats}
   \begin{tabular}{lrrrrrrl}
     \toprule
-    Class & Domains & Families & Mean length & Entropy & Digit ratio & TLDs & Top TLD \\
+    Class & Domains & Families & Mean length & Entropy & Digit ratio & TLDs & Top TLD \
     \midrule
-    Legitimate & 204{,}495 & --  & 14.1 & 2.85 & 0.038 & 625 & .com (47\%) \\
-    DGA        & 204{,}495 & 97  & 19.2 & 3.18 & 0.133 & 230 & .com (28\%) \\
+    Legitimate & 999{,}664 & --  & 13.7 & 2.79 & 0.038 & 1{,}030 & .com (42\%) \
+    DGA        & 999{,}671 & 103 & 18.4 & 3.17 & 0.149 & 273     & .com (23\%) \
     \bottomrule
   \end{tabular}
 \end{table}
 
-\textbf{Missing values, noise and biases.} There are no empty cells. We found:
-\begin{itemize}
-  \item \emph{Label conflicts:} 330 domains are in both Tranco and a DGA list.
-  Some are short DGA names that coincide with real sites (e.g.\ \texttt{qsnatch}
-  generates 3--4 letter names); others are clearly generated
-  (e.g.\ \texttt{pywolwnvd.biz}, family \texttt{m0yv}) and likely entered
-  Tranco through the DNS traffic of infected machines. We drop all 330.
-  \item \emph{Noise:} 141 duplicate DGA domains, 6 Tranco wildcard entries
-  (e.g.\ \texttt{\_wildcard\_.ph}) and one domain containing a line break. The
-  Kaggle \texttt{domain} column is truncated at hyphens for some rows, so we
-  use its \texttt{host} column.
-  \item \emph{Family names:} no DGA domain appears in both DGA sources (they are
-  years apart), so Kaggle labels were matched by domain shape: \texttt{newgoz}
-  and \texttt{gameoverdga} $\rightarrow$ \texttt{gameover}, \texttt{goz}
-  $\rightarrow$ the GameOver P2P family, \texttt{nivdort} kept as a new family.
-  \item \emph{Biases:} Tranco favours popular sites; each DGA family uses few
-  TLDs (median 3, and 33 families use a single one, vs.\ 625 for legitimate
-  domains), so the TLD alone would be a shortcut, which is why we remove it; DGA data cover two short
-  periods (around 2016 and 2025).
-\end{itemize}
+\textbf{Cleaning.} There are no missing values. We drop 330 domains found in both
+Tranco and a DGA list (e.g.\ \texttt{pywolwnvd.biz}, family \texttt{m0yv}), 141
+duplicates and 7 invalid strings. Kaggle family names are mapped to Mendeley names
+by domain shape (e.g.\ \texttt{newgoz} $\rightarrow$ \texttt{gameover}).
 
-\textbf{Preprocessing and balancing.} We lower-case and validate domains and
-drop conflicts and duplicates, which leaves 999{,}664 legitimate and
-3{,}170{,}189 DGA domains from 161 families of very different sizes (2 to
-519{,}280 domains). Following~\citet{shahzad2021dga}, we strip the TLD and keep
-one domain per remaining name (e.g.\ \texttt{google.com} and
-\texttt{google.de} both give \texttt{google}), and drop the 15{,}086 names found
-in both classes. We then balance: we keep the families with at least 300
-domains (64 smaller families are left out), sample at most 3{,}000 domains per
-family, and draw the same number of legitimate domains uniformly at random from
-the cleaned Tranco list. The remaining 10$\times$ family imbalance is handled
-with sample weights: legitimate and DGA weigh half each, and every DGA family
-weighs the same. Finally, we split the data 80/10/10 into training, validation
-and test sets, stratified by family; the test set is used only for the final
-results.
+\textbf{Balancing.} After cleaning, the 161 DGA families range from 2 to 519{,}280
+domains. We keep all legitimate domains, merge the 59 families with fewer than 300
+domains into \texttt{other\_dga}, and cap each family at 29{,}120 domains so that
+DGA and legitimate are equal in number. Sample weights give legitimate and DGA half
+each and, within DGA, are proportional to $1/\sqrt{n_f}$ ($n_f$: family size), so
+no family weighs more than 9.9 times another. The data are split 80/10/10
+(train/validation/test), stratified by family.
+
+\textbf{Biases.} Tranco favours popular sites. DGA families use few TLDs (23 use
+only one, vs.\ 1{,}030 TLDs for legitimate domains), so the TLD alone separates
+some families. The DGA data cover only 2021 and Sep--Oct 2025.
 
 \section{Proposed Models and Methods}
 Every model is trained in two setups on the same training set: \emph{binary}
