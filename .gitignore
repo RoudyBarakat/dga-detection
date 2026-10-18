@@ -2,8 +2,11 @@
 data/raw/*
 !data/raw/README.md
 
-# Intermediate data, rebuilt by src/data/build_dataset.py
-data/processed/domains_merged.csv.gz
+# Built datasets, rebuilt by the scripts in src/data/
+data/processed/*
+
+# Related papers (publisher copies, not redistributable)
+papers/
 
 # LaTeX build files
 proposal/*.aux
