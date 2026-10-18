@@ -152,13 +152,13 @@ table that gives, for each domain, its label (DGA/legitimate) and its family.
 The legitimate parts of the two DGA datasets (Majestic and Alexa) are not used,
 so all legitimate domains come from one documented ranking.
 
-\textbf{Size, features and target.} The dataset we use has 439{,}974 domains:
-219{,}987 legitimate and 219{,}987 DGA from 102 families, with 300 to 3{,}000
-domains per family (54 families have 3{,}000), so the largest family is at most
+\textbf{Size, features and target.} The dataset we use has 408{,}990 domains:
+204{,}495 legitimate and 204{,}495 DGA from 97 families, with 300 to 3{,}000
+domains per family (49 families have 3{,}000), so the largest family is at most
 10 times the smallest (Fig.~\ref{fig:data}, Table~\ref{tab:stats}). The only
-model input is the domain string (4 to 93 characters; a--z, 0--9, `-' and
-`.'); any numerical features are derived from it. The targets are the binary
-label (DGA/legitimate) and the family (\texttt{legit} or one of the 102 DGA
+model input is the domain name without its TLD (1 to 89 characters; a--z, 0--9,
+`-' and `.'); any numerical features are derived from it. The targets are the binary
+label (DGA/legitimate) and the family (\texttt{legit} or one of the 97 DGA
 families). Data were loaded with pandas~\cite{mckinney2010pandas} and plotted
 with Matplotlib~\cite{hunter2007matplotlib}.
 
@@ -167,7 +167,7 @@ with Matplotlib~\cite{hunter2007matplotlib}.
   \includegraphics[width=\linewidth]{figures/data_overview.pdf}
   \vspace{-1.8em}
   \caption{(a) Number of legitimate and DGA domains; (b) number of domains in
-  each of the 102 DGA families; (c) domain length of legitimate and DGA domains.}
+  each of the 97 DGA families; (c) domain length of legitimate and DGA domains.}
   \label{fig:data}
 \end{figure}
 
@@ -182,8 +182,8 @@ with Matplotlib~\cite{hunter2007matplotlib}.
     \toprule
     Class & Domains & Families & Mean length & Entropy & Digit ratio & TLDs & Top TLD \\
     \midrule
-    Legitimate & 219{,}987 & --  & 13.8 & 2.80 & 0.038 & 792 & .com (42\%) \\
-    DGA        & 219{,}987 & 102 & 19.1 & 3.18 & 0.148 & 235 & .com (24\%) \\
+    Legitimate & 204{,}495 & --  & 14.1 & 2.85 & 0.038 & 625 & .com (47\%) \\
+    DGA        & 204{,}495 & 97  & 19.2 & 3.18 & 0.133 & 230 & .com (28\%) \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -204,19 +204,62 @@ with Matplotlib~\cite{hunter2007matplotlib}.
   and \texttt{gameoverdga} $\rightarrow$ \texttt{gameover}, \texttt{goz}
   $\rightarrow$ the GameOver P2P family, \texttt{nivdort} kept as a new family.
   \item \emph{Biases:} Tranco favours popular sites; each DGA family uses few
-  TLDs (median 3.5, and 23 families use a single one, vs.\ 792 for legitimate
-  domains), so the TLD alone may act as a shortcut; DGA data cover two short
+  TLDs (median 3, and 33 families use a single one, vs.\ 625 for legitimate
+  domains), so the TLD alone would be a shortcut, which is why we remove it; DGA data cover two short
   periods (around 2016 and 2025).
 \end{itemize}
 
 \textbf{Preprocessing and balancing.} We lower-case and validate domains and
 drop conflicts and duplicates, which leaves 999{,}664 legitimate and
 3{,}170{,}189 DGA domains from 161 families of very different sizes (2 to
-519{,}280 domains). We then balance: we keep the families with at least 300
-domains (59 smaller families are left out), sample at most 3{,}000 domains per
+519{,}280 domains). Following~\citet{shahzad2021dga}, we strip the TLD and keep
+one domain per remaining name (e.g.\ \texttt{google.com} and
+\texttt{google.de} both give \texttt{google}), and drop the 15{,}086 names found
+in both classes. We then balance: we keep the families with at least 300
+domains (64 smaller families are left out), sample at most 3{,}000 domains per
 family, and draw the same number of legitimate domains uniformly at random from
 the cleaned Tranco list. The remaining 10$\times$ family imbalance is handled
-with class weights in the loss.
+with sample weights: legitimate and DGA weigh half each, and every DGA family
+weighs the same. Finally, we split the data 80/10/10 into training, validation
+and test sets, stratified by family; the test set is used only for the final
+results.
+
+\section{Proposed Models and Methods}
+Every model is trained in two setups on the same training set: \emph{binary}
+(target DGA/legitimate) and \emph{family-first} (target \texttt{legit} or one of
+the 97 families, collapsed with $P(\text{DGA}) = 1 - P(\texttt{legit})$). The
+neural models are also trained \emph{multi-task}~\cite{caruana1997multitask}: one
+shared encoder with a binary head and a family head whose losses are summed, so
+the family labels shape the latent space while the binary head makes the
+decision. Hyperparameters are chosen on the validation set.
+
+\textbf{Model 0: majority class.} Always predicts the most frequent class. It is
+the floor every model must beat.
+
+\textbf{Model 1: logistic regression} (scikit-learn~\cite{pedregosa2011sklearn}).
+\emph{Why it suits the data:} it is fast and interpretable, and it is linear: a
+binary model draws a single boundary between legitimate names and all DGAs,
+although families sit in very different regions (random strings vs.\ dictionary
+words). \emph{What we learn:} family-first gives it one boundary per family, so
+if family labels help anywhere, they should help most here.
+
+\textbf{Model 2: character-level CNN}~\cite{gregorio2024incremental}, in
+PyTorch~\cite{paszke2019pytorch}. It embeds each character and applies
+convolutions, learning local character patterns (hex runs, alternating vowels
+and consonants, word pieces) wherever they occur in the name. \emph{Why it suits
+the data:} families differ mostly in such local patterns. \emph{What we learn:}
+comparing it with Model~1 shows whether the gain from family labels shrinks as
+the model becomes more flexible, and the multi-task setup shows whether that gain
+can be kept without the collapse step.
+
+\textbf{Model 3: character-level Transformer encoder}~\cite{vaswani2017attention}.
+Self-attention relates characters anywhere in the name, not only neighbours.
+\emph{Why it suits the data:} dictionary DGAs, the hardest
+case~\cite{torrealba2025deepdga}, are built from whole words, so their pattern
+spans the name. \emph{What we learn:} whether a model that sees the whole name
+at once closes the gap on dictionary families, and how the three setups compare
+for it. Finally, we test whether the CNN or Transformer embeddings, given to the
+simple Model~1, are enough to match the full neural models.
 
 \bibliographystyle{plainnat}
 \bibliography{refs}

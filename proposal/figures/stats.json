@@ -1,48 +1,48 @@
 {
-  "rows": 439974,
+  "rows": 408990,
   "labels": {
-    "dga": 219987,
-    "legit": 219987
+    "legit": 204495,
+    "dga": 204495
   },
-  "families": 102,
+  "families": 97,
   "family_size": {
     "min": 300,
     "median": 3000.0,
     "max": 3000,
-    "at_cap": 54
+    "at_cap": 49
   },
   "tlds_per_dga_family": {
-    "median": 3.5,
-    "single_tld_families": 23
+    "median": 3.0,
+    "single_tld_families": 33
   },
   "legit": {
-    "domains": 219987,
-    "length_mean": 13.8,
+    "domains": 204495,
+    "length_mean": 14.1,
     "length_min_max": [
       4,
-      60
+      68
     ],
-    "entropy_mean": 2.8,
+    "entropy_mean": 2.85,
     "digit_ratio_mean": 0.038,
-    "n_tlds": 792,
+    "n_tlds": 625,
     "top_tld": [
       "com",
-      0.42
+      0.47
     ]
   },
   "dga": {
-    "domains": 219987,
-    "length_mean": 19.1,
+    "domains": 204495,
+    "length_mean": 19.2,
     "length_min_max": [
       6,
       93
     ],
     "entropy_mean": 3.18,
-    "digit_ratio_mean": 0.148,
-    "n_tlds": 235,
+    "digit_ratio_mean": 0.133,
+    "n_tlds": 230,
     "top_tld": [
       "com",
-      0.24
+      0.28
     ]
   }
 }
