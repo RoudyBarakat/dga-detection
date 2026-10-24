@@ -12,6 +12,7 @@ to 1/sqrt(family size). Weights have mean 1 on the training set.
 """
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -45,6 +46,9 @@ def sample_weights(df):
 
 
 def load_splits(splits_dir=SPLITS):
-    train, val, test = (load_split(name, splits_dir) for name in ("train", "val", "test"))
+    # The three files are read and checked in parallel.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        train, val, test = pool.map(lambda name: load_split(name, splits_dir),
+                                    ("train", "val", "test"))
     train = train.assign(weight=sample_weights(train))
     return train, val, test
