@@ -2,7 +2,7 @@
 
 Course project, Introduction to Machine Learning, American University of Beirut.
 
-**Team:** Roudy Barakat (rtb07@mail.aub.edu), Abdo Sebailli (ams86@mail.aub.edu)
+**Team:** Roudy Barakat (rtb07@mail.aub.edu), Abdo Sebaali (ams86@mail.aub.edu)
 
 Malware uses Domain Generation Algorithms (DGAs) to create many domains so infected
 hosts can reach their attacker. This project detects DGA domains from the domain name
