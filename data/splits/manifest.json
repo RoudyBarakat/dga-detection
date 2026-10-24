@@ -1,0 +1,25 @@
+{
+  "source": "domains_balanced.csv.gz",
+  "seed": 42,
+  "stratified_by": "family",
+  "files": {
+    "train.csv.gz": {
+      "rows": 1599468,
+      "legit": 799731,
+      "dga": 799737,
+      "sha256": "c920688bf42f5c61e5bcb8275697876271b4550999debf2f8c88ca444b1caf2e"
+    },
+    "val.csv.gz": {
+      "rows": 199933,
+      "legit": 99966,
+      "dga": 99967,
+      "sha256": "92afe1fba3a5dca159b1b3d7e6818160b41f4026c6d2160850a754d570c9ae14"
+    },
+    "test.csv.gz": {
+      "rows": 199934,
+      "legit": 99967,
+      "dga": 99967,
+      "sha256": "303dca886adb4371e3ea7e84d87daacfea09da6500b06cec13d32182f49ff32e"
+    }
+  }
+}
