@@ -1,33 +1,38 @@
-"""Load the balanced dataset, split it and compute sample weights.
+"""Load the saved train/validation/test splits and compute sample weights.
 
     from src.data.dataset import load_splits
     train, val, test = load_splits()
 
-Each split is a DataFrame with columns domain, label, family, weight. The split is
-80/10/10 train/validation/test, stratified by family, with a fixed seed so that every
-model sees the same rows. Weights: legitimate and DGA weigh half each; within DGA a
-domain's weight is proportional to 1/sqrt(family size). Weights have mean 1 on the
-training set.
+The splits are made once by notebooks/00_data_splits.ipynb (80/10/10, stratified by
+family, seed 42) and saved in data/splits/. Every file is checked against
+data/splits/manifest.json, so every model trains and is evaluated on exactly the same
+rows. Each split has the columns domain, label, family; train also gets weight:
+legitimate and DGA weigh half each, and within DGA a domain's weight is proportional
+to 1/sqrt(family size). Weights have mean 1 on the training set.
 """
+import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
-BALANCED = ROOT / "data/processed/domains_balanced.csv.gz"
-SPLIT_SEED = 42
+SPLITS = ROOT / "data/splits"
 
 
-def load(path=BALANCED):
-    return pd.read_csv(path, dtype=str, keep_default_na=False)
-
-
-def split(df, seed=SPLIT_SEED):
-    """80/10/10 split within each family."""
-    df = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
-    pos = df.groupby("family").cumcount() / df.groupby("family")["family"].transform("size")
-    return df[pos < 0.8], df[(pos >= 0.8) & (pos < 0.9)], df[pos >= 0.9]
+def load_split(name, splits_dir=SPLITS):
+    """Read one split (train, val or test) after checking it against the manifest."""
+    manifest = json.loads((splits_dir / "manifest.json").read_text())
+    fname = f"{name}.csv.gz"
+    info = manifest["files"][fname]
+    path = splits_dir / fname
+    if hashlib.sha256(path.read_bytes()).hexdigest() != info["sha256"]:
+        raise ValueError(f"{path} does not match manifest.json; "
+                         "re-run notebooks/00_data_splits.ipynb")
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    assert len(df) == info["rows"]
+    return df
 
 
 def sample_weights(df):
@@ -39,7 +44,7 @@ def sample_weights(df):
     return np.where(is_dga, raw / raw[is_dga].sum() * half, half / (~is_dga).sum())
 
 
-def load_splits(path=BALANCED, seed=SPLIT_SEED):
-    train, val, test = split(load(path), seed)
+def load_splits(splits_dir=SPLITS):
+    train, val, test = (load_split(name, splits_dir) for name in ("train", "val", "test"))
     train = train.assign(weight=sample_weights(train))
     return train, val, test

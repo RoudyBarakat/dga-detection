@@ -16,10 +16,12 @@ DGA vs. legitimate directly?
 data/
   raw/          source datasets (not committed, see data/raw/README.md)
   processed/    built datasets (not committed, rebuilt by the scripts below)
+  splits/       train/val/test files (made by 00_data_splits.ipynb) and manifest.json
 src/
-  data/         build, balance and explore the dataset; dataset.py loads and splits it
+  data/         build, balance and explore the dataset; dataset.py loads the splits
 notebooks/
-  01_data_loading.ipynb   load, split and weight the dataset
+  00_data_splits.ipynb    split the balanced data once and save the splits
+  01_data_loading.ipynb   load the saved splits and compute sample weights
   02_baseline.ipynb       majority class (Model 0) and logistic regression (Model 1)
 proposal/       LaTeX proposal (proposal.tex, refs.bib, figures/, proposal.pdf)
 ```
@@ -73,10 +75,19 @@ notebooks in `notebooks/`:
 jupyter notebook
 ```
 
-- `01_data_loading.ipynb` loads the dataset with `src/data/dataset.py`: an 80/10/10
-  train/validation/test split, stratified by family with a fixed seed, and sample
-  weights (legitimate and DGA weigh half each; within DGA, proportional to
-  1/sqrt(family size)). All models use this loader, so they see the same rows.
+- `00_data_splits.ipynb` splits the balanced data once into train/validation/test
+  (80/10/10, stratified by family, seed 42), checks that every family is in every set,
+  and saves `data/splits/train.csv.gz`, `val.csv.gz`, `test.csv.gz` with
+  `manifest.json` (row counts and SHA-256 of each file). Re-running it gives identical
+  files; if your files match the manifest, you have exactly the same data.
+- `01_data_loading.ipynb` loads the saved splits with `src/data/dataset.py`, which
+  checks each file against the manifest, and computes the sample weights (legitimate
+  and DGA weigh half each; within DGA, proportional to 1/sqrt(family size)). Every
+  model loads the data this way:
+  ```python
+  from src.data.dataset import load_splits
+  train, val, test = load_splits()
+  ```
 - `02_baseline.ipynb` trains Model 0 (majority class) and Model 1 (logistic regression
   on character 1-3-grams) in the binary and family-first setups, with and without
   the TLD, and reports macro-F1, DGA precision and recall, ROC-AUC and recall per DGA
