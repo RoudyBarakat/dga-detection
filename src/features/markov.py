@@ -74,7 +74,7 @@ class MarkovModel:
 
 
 def markov_features(train: pd.DataFrame, val: pd.DataFrame, test: pd.DataFrame,
-                    orders=(1, 2), n_folds: int = 5, seed: int = 0,
+                    orders=(1, 2), n_folds: int = 10, seed: int = 0,
                     text_col: str = "text", label_col: str = "label"):
     """Compute Markov scores for train, validation and test.
 

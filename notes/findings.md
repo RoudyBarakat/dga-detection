@@ -52,3 +52,11 @@ Things we discovered about the data, for the report and presentation.
 
 &#x20; N-gram features are the strongest single features so far (ng3\_mean AUC \~0.92).
 
+
+
+\- 2026-11-01 (Abdo): switched the out-of-fold n-gram and Markov features from 5 to
+
+&#x20; 10 folds (training rows now scored with 90% of the counts instead of 80%). The
+
+&#x20; train/val gap in the leakage check shrank (DGA ng3\_rare: 0.196/0.183 -> 0.178/0.183).
+

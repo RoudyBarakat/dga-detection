@@ -12,7 +12,7 @@ in LEGITIMATE training domains, then score each domain by how common its
 n-grams are.
 
 Leakage rule: the counts come only from the training set, never from
-validation or test. Inside the training set we use 5 "folds": the features of
+validation or test. Inside the training set we use 10 "folds": the features of
 a training row are computed from counts that do NOT include that row's fold.
 Otherwise every legit training domain would only contain n-grams that are
 "already known", and the model would learn a pattern that does not hold on
@@ -50,7 +50,7 @@ class NgramModel:
         self.top = {g for g, _ in counts.most_common(top_k)}
         # An n-gram is "rare" if it makes up less than rare_rate of all n-grams
         # (1e-6 = fewer than 1 in a million, about 10 times in our legit data).
-        # A rate instead of a fixed count, so the fold models (built on 80% of
+        # A rate instead of a fixed count, so the fold models (built on 90% of
         # the data) and the full model use the same definition.
         self.rare_below = rare_rate * self.total
 
@@ -81,7 +81,7 @@ def _score_all(texts: pd.Series, model: NgramModel, n: int) -> pd.DataFrame:
 
 
 def ngram_features(train: pd.DataFrame, val: pd.DataFrame, test: pd.DataFrame,
-                   ns=(2, 3), n_folds: int = 5, seed: int = 0,
+                   ns=(2, 3), n_folds: int = 10, seed: int = 0,
                    text_col: str = "text", label_col: str = "label"):
     """Compute n-gram features for train, validation and test.
 
