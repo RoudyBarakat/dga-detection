@@ -5,6 +5,9 @@ data/raw/*
 # Built datasets, rebuilt by the scripts in src/data/
 data/processed/*
 
+# Trained models, saved by the notebooks
+checkpoints/
+
 # Related papers (publisher copies, not redistributable)
 papers/
 

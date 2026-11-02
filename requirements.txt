@@ -4,3 +4,4 @@ scikit-learn>=1.5
 matplotlib>=3.11
 notebook>=7.0
 tldextract>=5.0
+torch>=2.4
