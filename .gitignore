@@ -8,6 +8,9 @@ data/processed/*
 # Trained models, saved by the notebooks
 checkpoints/
 
+# MLflow tracking database and logged files, written by the notebooks
+mlruns/
+
 # Related papers (publisher copies, not redistributable)
 papers/
 

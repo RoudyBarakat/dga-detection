@@ -19,7 +19,9 @@ data/
   splits/       train/val/test files (made by 00_data_splits.ipynb) and manifest.json
 src/
   data/         build, balance and explore the dataset; dataset.py loads the splits
-  models/       character CNN (charcnn.py), input encoding, training loop, shared metrics
+  models/       character CNN (charcnn.py), input encoding, training loop with checkpoints
+                (train.py), MLflow tracking for every notebook (tracking.py), training
+                plots (plots.py), shared metrics
 notebooks/
   00_data_splits.ipynb    split the balanced data once and save the splits
   01_data_loading.ipynb   load the saved splits and compute sample weights
@@ -99,8 +101,12 @@ jupyter notebook
   Figure 1), in the binary and family-first setups with the training setup of the
   paper, and reports the same metrics as the baselines. The input is the full domain
   name, TLD included, padded to 93 characters (the longest domain in the dataset). It trains on a 100k-row sample
-  by default; the full training set needs a GPU (e.g. Colab). Trained models are
-  saved in `checkpoints/` (not committed).
+  by default; the full training set needs a GPU (e.g. Colab). Training is saved after
+  every epoch in `checkpoints/checkpoints_binary_cnn_<run>/` and
+  `checkpoints/checkpoints_multifamily_cnn_<run>/` (not committed), and an interrupted
+  run continues from its last saved epoch. Every run is also tracked with MLflow in
+  `mlruns/` (not committed); to browse the runs, run
+  `mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db` from the repository root.
 
 ## Contributing
 

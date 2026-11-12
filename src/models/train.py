@@ -1,23 +1,34 @@
 """Train and apply the neural models (PyTorch).
 
-fit() follows the training setup of Gregorio et al. (2024), Table 2: Adam, learning
-rate 1e-4, batch size 250, cross-entropy plus L1 (1e-5) and L2 (1e-4) penalties on
-the convolution and dense weights, 20 epochs, keeping the best epoch on validation.
-Two differences: the loss is weighted with the training sample weights, and the best
-epoch is the one with the highest validation macro-F1 on the DGA/legitimate decision
-(the paper uses accuracy). With several tasks (multi-task), their losses are summed.
+fit() runs the training of Gregorio et al. (2024), Table 2: the optimizer (Adam in
+the paper) minimizes the loss on shuffled mini-batches for a number of epochs, and the
+best epoch on validation is kept. Here the best epoch is the one with the highest
+validation macro-F1 on the DGA/legitimate decision (the paper uses accuracy). The
+notebook defines the predictor, the loss and the optimizer, and passes them to fit().
+
+After every epoch, fit() saves the training in a folder, logs it to MLflow
+(tracking.py) and redraws the loss plot (plots.py). A training that was interrupted
+continues from its last saved epoch when fit() is called again with the same folder:
+
+    folder/epoch_01.pt, ...   the model weights after each epoch
+    folder/history.csv        J_train, J_val and the validation metrics of every epoch
+    folder/last.pt            everything needed to continue (weights, optimizer, shuffling)
+    folder/best.pt            the weights of the kept epoch, once training has finished
+    folder/mlflow_run_id.txt  the MLflow run of this training
 """
-import copy
 import random
 import time
+from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler, TensorDataset
 
+from src.models import tracking
 from src.models.metrics import binary_metrics
+from src.models.plots import LivePlot
 
 
 def pick_device():
@@ -59,50 +70,165 @@ def penalty(model, l1, l2):
     return sum(l1 * w.abs().sum() + l2 * w.square().sum() for w in weights)
 
 
-def fit(model, x_train, y_train, weights, x_val, y_val, classes, decide, epochs=20,
-        lr=1e-4, batch_size=250, l1=1e-5, l2=1e-4, seed=0, device=None):
-    """Train `model` and keep the weights of its best epoch on validation.
+class Split(NamedTuple):
+    """One split of the data, as fit() uses it.
 
-    y_train: {task: class codes}, one entry per output layer of the model.
-    weights: sample weight of each training domain, or None.
-    y_val: 1 for DGA, 0 for legitimate. decide: the task whose P(DGA) is scored.
-    Returns one row per epoch: training loss and validation metrics.
+    x: the encoded domains. y: the class codes of the target, or {task: codes} for a
+    model with several outputs. w: the sample weights (None: all 1). dga: 1 for DGA,
+    0 for legitimate (needed for validation: the metrics are on that decision).
+    """
+    x: np.ndarray
+    y: object
+    w: np.ndarray | None = None
+    dga: np.ndarray | None = None
+
+
+def fit(model, loss_fn, optimizer, train, val, *, decide, classes, folder, epochs=20,
+        batch_size=250, seed=0, params=None, device=None):
+    """Train `model` and keep the weights of its best validation epoch.
+
+    loss_fn(model, logits, y, w): the loss of one batch, minimized by `optimizer`.
+    train, val: Split. decide: the output whose P(DGA) is scored on validation.
+    folder: where the training is saved; if it holds an interrupted training, that
+    training continues. params: the settings of the run (learning rate, penalties...),
+    logged to MLflow and checked when a training continues (setup MLflow first with
+    tracking.setup).
+    Returns one row per epoch (J_train, J_val and the validation metrics) and the
+    validation P(DGA) of the kept epoch; `model` keeps the weights of the kept epoch.
     """
     device = device or pick_device()
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
     model.to(device)
-    tasks = list(y_train)
-    w = np.ones(len(x_train)) if weights is None else np.array(weights)
-    data = TensorDataset(torch.as_tensor(x_train), torch.as_tensor(w, dtype=torch.float32),
-                         *(torch.as_tensor(y_train[task]) for task in tasks))
-    loader = DataLoader(data, batch_size=batch_size, shuffle=True,
-                        generator=torch.Generator().manual_seed(seed))
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    x, w, y = _tensors(train)
+    tasks = list(y) if isinstance(y, dict) else None
+    data = TensorDataset(x, w, *(y.values() if tasks else [y]))
+    # Shuffled mini-batches, each taken with one indexing step instead of one domain at a
+    # time: the same batches as DataLoader(shuffle=True), about 10x less loading time.
+    shuffle = torch.Generator().manual_seed(seed)
+    batches = BatchSampler(RandomSampler(data, generator=shuffle), batch_size, drop_last=False)
+    loader = DataLoader(data, sampler=batches, batch_size=None, generator=shuffle)
 
-    history, best_f1, best_state = [], -1.0, None
-    for epoch in range(1, epochs + 1):
-        start = time.time()
-        model.train()
-        total = torch.zeros((), device=device)
-        for xb, wb, *yb in loader:
-            xb, wb = xb.to(device), wb.to(device)
-            logits = model(xb)
-            loss = sum((F.cross_entropy(logits[task], y.to(device), reduction="none") * wb).mean()
-                       for task, y in zip(tasks, yb))
-            loss = loss + penalty(model, l1, l2)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            total += loss.detach() * len(xb)
+    settings = {**(params or {}), "batch_size": batch_size, "seed": seed}
+    history, best_f1, best_p = [], -1.0, None
+    last = _load_last(folder, settings)
+    if last is not None:
+        model.load_state_dict(last["model"])
+        optimizer.load_state_dict(last["optimizer"])
+        shuffle.set_state(last["shuffle"])   # the next epochs get the batches they would have had
+        history, best_f1, best_p = last["history"], last["best_f1"], last["best_p"]
+        print(f"{len(history)} epoch(s) already saved in {folder.name}")
+    if len(history) >= epochs and (folder / "best.pt").exists():   # finished: only reload
+        model.load_state_dict(torch.load(folder / "best.pt", map_location=device,
+                                         weights_only=True))
+        return pd.DataFrame(history).set_index("epoch"), best_p
 
-        p = p_dga(predict_proba(model, x_val), decide, classes)
-        row = {"epoch": epoch, "train_loss": total.item() / len(x_train),
-               **binary_metrics(y_val, p), "seconds": round(time.time() - start)}
-        history.append(row)
-        if row["macro_f1"] > best_f1:
-            best_f1, best_state = row["macro_f1"], copy.deepcopy(model.state_dict())
-        print(f"epoch {epoch:2d}: loss {row['train_loss']:.4f}, "
-              f"val macro-F1 {row['macro_f1']:.4f}, AUC {row['roc_auc']:.4f} "
-              f"({row['seconds']} s)")
+    plot = LivePlot(f"Loss, {folder.name}")
+    plot.update(history)
+    run_params = {**settings, "train_rows": len(x), "device": str(device),
+                  "checkpoints": str(folder)}
+    with tracking.start_run(folder.name, run_params, folder=folder):
+        for epoch in range(len(history) + 1, epochs + 1):
+            start = time.time()
+            train_loss = train_epoch(model, loss_fn, optimizer, loader, tasks, device)
+            val_loss, p = evaluate(model, loss_fn, val, decide, classes, device)
+            metrics = binary_metrics(val.dga, p)
+            history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+                            **metrics, "seconds": round(time.time() - start)})
+            if metrics["macro_f1"] > best_f1:
+                best_f1, best_p = metrics["macro_f1"], p
 
-    model.load_state_dict(best_state)
-    return pd.DataFrame(history).set_index("epoch")
+            _save_epoch(folder, epoch, model, {
+                "settings": settings, "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(), "shuffle": shuffle.get_state(),
+                "history": history, "best_f1": best_f1, "best_p": best_p})
+            tracking.log_metrics({"train_loss": train_loss, "val_loss": val_loss,
+                                  **{f"val_{k}": v for k, v in metrics.items()}}, step=epoch)
+            print(f"epoch {epoch:2d}: J_train {train_loss:.4f}, J_val {val_loss:.4f}, "
+                  f"val macro-F1 {metrics['macro_f1']:.4f}, AUC {metrics['roc_auc']:.4f} "
+                  f"({history[-1]['seconds']} s)")
+            plot.update(history)
+
+        # Keep the best epoch, and log it to MLflow with the history and the loss plot.
+        history = pd.DataFrame(history).set_index("epoch")
+        best = int(history["macro_f1"].idxmax())   # the first epoch with the highest macro-F1
+        model.load_state_dict(torch.load(folder / f"epoch_{best:02d}.pt", map_location=device,
+                                         weights_only=True))
+        torch.save(model.state_dict(), folder / "best.pt")
+        tracking.log_metrics({"kept_epoch": best, "kept_val_macro_f1": best_f1})
+        tracking.log_files(folder / "history.csv")
+        tracking.log_figure(plot.fig, "losses.png")
+        tracking.log_model(model, input_example=val.x[:5])
+    print(f"kept epoch {best} (val macro-F1 {best_f1:.4f})")
+    return history, best_p
+
+
+def train_epoch(model, loss_fn, optimizer, loader, tasks, device):
+    """One pass of the optimizer over the shuffled training batches; returns J_train."""
+    model.train()
+    total, n = torch.zeros((), device=device), 0
+    for xb, wb, *yb in loader:
+        xb, wb = xb.to(device), wb.to(device)
+        yb = {t: v.to(device) for t, v in zip(tasks, yb)} if tasks else yb[0].to(device)
+        loss = loss_fn(model, model(xb), yb, wb)
+        optimizer.zero_grad()
+        loss.backward()    # gradient of the loss
+        optimizer.step()   # one optimizer step
+        total += loss.detach() * len(xb)
+        n += len(xb)
+    return total.item() / n
+
+
+@torch.no_grad()
+def evaluate(model, loss_fn, split, decide, classes, device, batch_size=4096):
+    """The loss on the whole `split` (J_val) and the P(DGA) of each of its domains."""
+    model.eval()
+    x, w, y = _tensors(split)
+    total, proba = 0.0, []
+    for start in range(0, len(x), batch_size):
+        rows = slice(start, start + batch_size)
+        logits = model(x[rows].to(device))
+        yb = ({t: v[rows].to(device) for t, v in y.items()} if isinstance(y, dict)
+              else y[rows].to(device))
+        total += loss_fn(model, logits, yb, w[rows].to(device)).item() * len(x[rows])
+        proba.append(logits[decide].softmax(1).cpu().numpy())
+    return total / len(x), p_dga({decide: np.concatenate(proba)}, decide, classes)
+
+
+def load_history(folder):
+    """The saved history of the training in `folder` (one row per epoch), or None."""
+    path = Path(folder) / "history.csv"
+    return pd.read_csv(path, index_col="epoch") if path.exists() else None
+
+
+def _tensors(split):
+    """x, w and y of `split` as tensors (y: one tensor, or {task: tensor})."""
+    w = np.ones(len(split.x)) if split.w is None else split.w
+    y = ({task: _tensor(codes) for task, codes in split.y.items()}
+         if isinstance(split.y, dict) else _tensor(split.y))
+    return _tensor(split.x), _tensor(w, np.float32), y
+
+
+def _tensor(values, dtype=None):
+    """`values` as a tensor, sharing its memory unless it is read-only (as pandas returns)."""
+    values = np.asarray(values, dtype=dtype)
+    return torch.as_tensor(values if values.flags.writeable else values.copy())
+
+
+def _load_last(folder, settings):
+    """The saved state of the training in `folder`, or None if it has not started."""
+    if not (folder / "last.pt").exists():
+        return None
+    last = torch.load(folder / "last.pt", map_location="cpu", weights_only=False)
+    if last["settings"] != settings:
+        raise ValueError(f"{folder} holds a training with {last['settings']}, not "
+                         f"{settings}: use another folder to start a new training")
+    return last
+
+
+def _save_epoch(folder, epoch, model, state):
+    """Save the weights of `epoch`, the history so far, and the state to continue from."""
+    torch.save(model.state_dict(), folder / f"epoch_{epoch:02d}.pt")
+    pd.DataFrame(state["history"]).to_csv(folder / "history.csv", index=False)
+    torch.save(state, folder / "last.tmp")
+    (folder / "last.tmp").replace(folder / "last.pt")   # an interrupted save keeps the old one
