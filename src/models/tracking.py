@@ -106,7 +106,7 @@ def log_model(model, input_example, name="model"):
         # MLflow also checks the example for model serving, which expects a single output
         # tensor; the CNN returns a dict of logits per output, so that check only warns.
         with _quiet("mlflow.models.model"):
-            return mlflow.pytorch.log_model(model, name=name, serialization_format="pt2",
+            return mlflow.pytorch.log_model(model, name=name, export_model=True,
                                             input_example=example, signature=signature)
     return mlflow.sklearn.log_model(model, name=name, input_example=input_example)
 
