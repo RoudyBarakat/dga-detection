@@ -5,8 +5,22 @@ data/raw/*
 # Built datasets, rebuilt by the scripts in src/data/
 data/processed/*
 
-# Trained models, saved by the notebooks
-checkpoints/
+# Trained models, saved by the notebooks: only the files below of the two final CNN
+# runs are committed. A folder's contents are ignored rather than the folder itself,
+# because git cannot re-include a file inside an ignored folder.
+checkpoints/*
+!checkpoints/checkpoints_binary_cnn_1/
+!checkpoints/checkpoints_multifamily_cnn_1/
+checkpoints/checkpoints_binary_cnn_1/*
+checkpoints/checkpoints_multifamily_cnn_1/*
+!checkpoints/checkpoints_binary_cnn_1/best.pt
+!checkpoints/checkpoints_binary_cnn_1/last.pt
+!checkpoints/checkpoints_binary_cnn_1/history.csv
+!checkpoints/checkpoints_binary_cnn_1/mlflow_run_id.txt
+!checkpoints/checkpoints_multifamily_cnn_1/best.pt
+!checkpoints/checkpoints_multifamily_cnn_1/last.pt
+!checkpoints/checkpoints_multifamily_cnn_1/history.csv
+!checkpoints/checkpoints_multifamily_cnn_1/mlflow_run_id.txt
 
 # MLflow tracking database and logged files, written by the notebooks
 mlruns/
