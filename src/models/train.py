@@ -93,8 +93,9 @@ def fit(model, loss_fn, optimizer, train, val, *, decide, classes, folder, epoch
     training continues. params: the settings of the run (learning rate, penalties...),
     logged to MLflow and checked when a training continues (setup MLflow first with
     tracking.setup).
-    Returns one row per epoch (J_train, J_val and the validation metrics) and the
-    validation P(DGA) of the kept epoch; `model` keeps the weights of the kept epoch.
+    Returns one row per epoch (J_train, J_val, the binary validation loss of evaluate()
+    and the validation metrics) and the validation P(DGA) of the kept epoch; `model`
+    keeps the weights of the kept epoch.
     """
     device = device or pick_device()
     folder = Path(folder)
@@ -131,9 +132,10 @@ def fit(model, loss_fn, optimizer, train, val, *, decide, classes, folder, epoch
         for epoch in range(len(history) + 1, epochs + 1):
             start = time.time()
             train_loss = train_epoch(model, loss_fn, optimizer, loader, tasks, device)
-            val_loss, p = evaluate(model, loss_fn, val, decide, classes, device)
+            val_loss, val_binary_loss, p = evaluate(model, loss_fn, val, decide, classes, device)
             metrics = binary_metrics(val.dga, p)
             history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+                            "val_binary_loss": val_binary_loss,
                             **metrics, "seconds": round(time.time() - start)})
             if metrics["macro_f1"] > best_f1:
                 best_f1, best_p = metrics["macro_f1"], p
@@ -143,10 +145,11 @@ def fit(model, loss_fn, optimizer, train, val, *, decide, classes, folder, epoch
                 "optimizer": optimizer.state_dict(), "shuffle": shuffle.get_state(),
                 "history": history, "best_f1": best_f1, "best_p": best_p})
             tracking.log_metrics({"train_loss": train_loss, "val_loss": val_loss,
+                                  "val_binary_loss": val_binary_loss,
                                   **{f"val_{k}": v for k, v in metrics.items()}}, step=epoch)
-            print(f"epoch {epoch:2d}: J_train {train_loss:.4f}, J_val {val_loss:.4f}, "
-                  f"val macro-F1 {metrics['macro_f1']:.4f}, AUC {metrics['roc_auc']:.4f} "
-                  f"({history[-1]['seconds']} s)")
+            print(f"epoch {epoch:2d}: J_train {train_loss:.4f}, J_val {val_loss:.4f} "
+                  f"(binary {val_binary_loss:.4f}), val macro-F1 {metrics['macro_f1']:.4f}, "
+                  f"AUC {metrics['roc_auc']:.4f} ({history[-1]['seconds']} s)")
             plot.update(history)
 
         # Keep the best epoch, and log it to MLflow with the history and the loss plot.
@@ -179,20 +182,43 @@ def train_epoch(model, loss_fn, optimizer, loader, tasks, device):
     return total.item() / n
 
 
+def binary_cross_entropy(logits, dga, legit):
+    """Cross-entropy of each row on the DGA/legitimate decision alone.
+
+    logits: one output of the model, whose class `legit` is the legitimate one; P(DGA)
+    = 1 - P(legit) is the sum over its other classes. dga: True for the DGA rows.
+    """
+    log_p = logits.log_softmax(1)
+    log_p_dga = torch.cat([log_p[:, :legit], log_p[:, legit + 1:]], 1).logsumexp(1)
+    return -torch.where(dga, log_p_dga, log_p[:, legit])
+
+
 @torch.no_grad()
 def evaluate(model, loss_fn, split, decide, classes, device, batch_size=4096):
-    """The loss on the whole `split` (J_val) and the P(DGA) of each of its domains."""
+    """On the whole `split`: the loss (J_val), the binary loss, and the P(DGA) of each domain.
+
+    The binary loss is the weighted cross-entropy of the DGA/legitimate decision alone
+    (binary_cross_entropy on the `decide` output), without the penalty on the weights.
+    J_val of a family model also counts the DGA families taken for one another; the
+    binary loss does not, so it is on the same scale for a binary and a family model.
+    """
     model.eval()
     x, w, y = _tensors(split)
-    total, proba = 0.0, []
+    dga = _tensor(split.dga).bool()
+    legit = list(classes[decide]).index("legit")
+    total, binary_total, proba = 0.0, 0.0, []
     for start in range(0, len(x), batch_size):
         rows = slice(start, start + batch_size)
         logits = model(x[rows].to(device))
         yb = ({t: v[rows].to(device) for t, v in y.items()} if isinstance(y, dict)
               else y[rows].to(device))
-        total += loss_fn(model, logits, yb, w[rows].to(device)).item() * len(x[rows])
+        wb = w[rows].to(device)
+        total += loss_fn(model, logits, yb, wb).item() * len(x[rows])
+        binary = binary_cross_entropy(logits[decide], dga[rows].to(device), legit)
+        binary_total += (binary * wb).sum().item()
         proba.append(logits[decide].softmax(1).cpu().numpy())
-    return total / len(x), p_dga({decide: np.concatenate(proba)}, decide, classes)
+    return (total / len(x), binary_total / len(x),
+            p_dga({decide: np.concatenate(proba)}, decide, classes))
 
 
 def load_history(folder):
