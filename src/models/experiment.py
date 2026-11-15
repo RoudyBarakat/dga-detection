@@ -1,5 +1,8 @@
 """Run Model 1 (logistic regression) over several seeds, in parallel, tracked in MLflow.
 
+Optional PCA (pca=0.95, for example): the features are standardized and reduced with
+PCA before the model, keeping enough components for that share of the variance.
+
 Each seed draws a different random sample of the training set (as in
 02_baseline.ipynb), then trains the four setups (binary / family-first x with /
 without TLD) and tests them with the shared metrics. Repeating over seeds shows
@@ -19,6 +22,8 @@ from pathlib import Path
 
 import pandas as pd
 from joblib import Parallel, delayed
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 from src.models.evaluate import binary_metrics, p_dga_from_proba, recall_per_family
 from src.models.logreg import LogReg
@@ -27,12 +32,29 @@ SETUPS = [("binary", "yes"), ("binary", "no"), ("family", "yes"), ("family", "no
 METRICS = ["macro_f1", "dga_precision", "dga_recall", "roc_auc"]
 
 
-def _fit_and_test(X_train, target, weight, X_eval, y_eval, families, l2):
-    """Steps 3 and 4 for one setup: fit, then metrics on the evaluation set."""
+def _reduce_pca(X_train, X_eval, pca):
+    """Standardize, then PCA, both learned on the training rows only (no leakage).
+
+    pca: a share of variance to keep (e.g. 0.95) or a number of components (e.g. 10).
+    Returns the reduced train and eval tables and some information for MLflow.
+    """
+    scaler = StandardScaler().fit(X_train)
+    reducer = PCA(n_components=pca, random_state=0).fit(scaler.transform(X_train))
+    info = {"n_components": reducer.n_components_,
+            "explained_variance": reducer.explained_variance_ratio_.sum()}
+    return (reducer.transform(scaler.transform(X_train)),
+            reducer.transform(scaler.transform(X_eval)), info)
+
+
+def _fit_and_test(X_train, target, weight, X_eval, y_eval, families, l2, pca=None):
+    """Steps 3 and 4 for one setup: (optional PCA,) fit, then metrics on the evaluation set."""
+    info = {"n_components": X_train.shape[1]}
+    if pca is not None:
+        X_train, X_eval, info = _reduce_pca(X_train, X_eval, pca)
     model = LogReg(l2=l2).fit(X_train, target, sample_weight=weight)
     p_dga = p_dga_from_proba(model.predict_proba(X_eval), model.classes_)
     recall = recall_per_family(families, y_eval, (p_dga >= 0.5).astype(int))
-    metrics = {**binary_metrics(y_eval, p_dga), "iterations": model.n_iter_,
+    metrics = {**binary_metrics(y_eval, p_dga), **info, "iterations": model.n_iter_,
                "converged": model.converged_, "fit_s": round(model.fit_seconds_)}
     return metrics, recall
 
@@ -73,7 +95,9 @@ def _log_to_mlflow(table, recalls, experiment, run_name, settings):
             name = f"{run_name} {s} TLD={tld} seed={seed}"
             with tracking.start_run(name, {**settings, "setup": s, "tld": tld,
                                            "seed": seed}):
-                tracking.log_metrics({m: row[m] for m in METRICS + ["fit_s", "iterations"]})
+                extra = ["fit_s", "iterations", "n_components", "explained_variance"]
+                tracking.log_metrics({m: row[m] for m in METRICS + extra
+                                      if m in row and pd.notna(row[m])})
                 path = tmp / "recall_per_family.csv"
                 recalls[seed, s, tld].rename("recall").to_csv(path)
                 tracking.log_files(path)
@@ -98,13 +122,16 @@ def _log_to_mlflow(table, recalls, experiment, run_name, settings):
 
 def run_seeds(feats, train_full, evaluate, X_eval_all, seeds=range(5),
               sample=100_000, l2=1e-4, n_jobs=None, track=True,
-              experiment="baselines", run_name="logreg_handcrafted", eval_set="val"):
+              experiment="baselines", run_name="logreg_handcrafted", eval_set="val",
+              pca=None):
     """Train and test the four setups for every seed.
 
     feats: output of build_features; train_full: full training split (with
     'weight'); evaluate / X_eval_all: the evaluation split and its features.
     track: log everything in MLflow with the team's tracking module
     (src/models/tracking.py), in the MLflow experiment `experiment`.
+    pca: None = all features; a share of variance (e.g. 0.95) or a number of
+    components = standardize + PCA before the model (learned on each training sample).
     Returns one row per (seed, setup, TLD) with the metrics.
     """
     name_cols, tld_cols = feats["name_cols"], feats["tld_cols"]
@@ -119,7 +146,7 @@ def run_seeds(feats, train_full, evaluate, X_eval_all, seeds=range(5),
             target = train["label"] if setup == "binary" else train["family"]
             jobs.append(delayed(_fit_and_test)(X[cols], target, train["weight"],
                                                X_eval_all[cols], y_eval,
-                                               evaluate["family"], l2))
+                                               evaluate["family"], l2, pca))
             keys.append((seed, setup, tld))
 
     # Slowest jobs (family-first) first, so the cores stay busy.
@@ -136,6 +163,7 @@ def run_seeds(feats, train_full, evaluate, X_eval_all, seeds=range(5),
     if track:
         settings = {"model": "logreg", "features": "handcrafted_74",
                     "sample": sample or "full", "l2": l2, "weights": True,
-                    "n_seeds": len(list(seeds)), "eval_set": eval_set}
+                    "n_seeds": len(list(seeds)), "eval_set": eval_set,
+                    "pca": "none" if pca is None else pca}
         _log_to_mlflow(table, recalls, experiment, run_name, settings)
     return table
