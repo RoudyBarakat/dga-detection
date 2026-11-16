@@ -49,17 +49,19 @@ def setup(experiment, mlruns=MLRUNS):
     _experiment = experiment
 
 
-def start_run(name, params=None, folder=None):
+def start_run(name, params=None, folder=None, resume=False):
     """Start the run `name` and log its `params`; use it as `with start_run(...):`.
 
     With `folder` (the checkpoint folder of a training), the run id is kept in
-    folder/mlflow_run_id.txt, so a training that continues after an interruption
-    continues the same run (its parameters were logged when it started).
+    folder/mlflow_run_id.txt. With `resume` too (the training continues after an
+    interruption), the run saved there is continued, its parameters logged when it
+    started; if there is none, or it is not in mlruns/ (e.g. on another machine: the
+    file is local, like mlruns/), a new run is started.
     """
     if _experiment is None:
         raise RuntimeError("call tracking.setup(experiment) first")
     saved = Path(folder) / "mlflow_run_id.txt" if folder is not None else None
-    if saved is not None and saved.exists():
+    if resume and saved is not None and saved.exists():
         try:
             return mlflow.start_run(run_id=saved.read_text().strip())
         except MlflowException:

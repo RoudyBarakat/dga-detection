@@ -12,9 +12,13 @@ continues from its last saved epoch when fit() is called again with the same fol
 
     folder/epoch_01.pt, ...   the model weights after each epoch
     folder/history.csv        J_train, J_val and the validation metrics of every epoch
-    folder/last.pt            everything needed to continue (weights, optimizer, shuffling)
+    folder/last.pt            everything needed to continue (weights, optimizer, shuffling,
+                              and the weights of the best epoch so far)
     folder/best.pt            the weights of the kept epoch, once training has finished
-    folder/mlflow_run_id.txt  the MLflow run of this training
+    folder/mlflow_run_id.txt  the MLflow run of this training (local, like mlruns/)
+
+Continuing only needs last.pt: the epoch files are kept for inspection, so a folder
+with only last.pt and best.pt (as committed) can be continued with more epochs.
 """
 import random
 import time
@@ -111,13 +115,14 @@ def fit(model, loss_fn, optimizer, train, val, *, decide, classes, folder, epoch
     loader = DataLoader(data, sampler=batches, batch_size=None, generator=shuffle)
 
     settings = {**(params or {}), "batch_size": batch_size, "seed": seed}
-    history, best_f1, best_p = [], -1.0, None
+    history, best_f1, best_p, best_model = [], -1.0, None, None
     last = _load_last(folder, settings)
     if last is not None:
         model.load_state_dict(last["model"])
         optimizer.load_state_dict(last["optimizer"])
         shuffle.set_state(last["shuffle"])   # the next epochs get the batches they would have had
         history, best_f1, best_p = last["history"], last["best_f1"], last["best_p"]
+        best_model = last["best_model"]
         print(f"{len(history)} epoch(s) already saved in {folder.name}")
     if len(history) >= epochs and (folder / "best.pt").exists():   # finished: only reload
         model.load_state_dict(torch.load(folder / "best.pt", map_location=device,
@@ -128,7 +133,9 @@ def fit(model, loss_fn, optimizer, train, val, *, decide, classes, folder, epoch
     plot.update(history)
     run_params = {**settings, "train_rows": len(x), "device": str(device),
                   "checkpoints": str(folder)}
-    with tracking.start_run(folder.name, run_params, folder=folder):
+    # A training that starts from scratch is a new run, even if the folder names an
+    # older one (e.g. interrupted before its first epoch was saved, with other settings).
+    with tracking.start_run(folder.name, run_params, folder=folder, resume=last is not None):
         for epoch in range(len(history) + 1, epochs + 1):
             start = time.time()
             train_loss = train_epoch(model, loss_fn, optimizer, loader, tasks, device)
@@ -139,11 +146,14 @@ def fit(model, loss_fn, optimizer, train, val, *, decide, classes, folder, epoch
                             **metrics, "seconds": round(time.time() - start)})
             if metrics["macro_f1"] > best_f1:
                 best_f1, best_p = metrics["macro_f1"], p
+                best_model = {k: v.detach().to("cpu", copy=True)   # a copy: training goes on
+                              for k, v in model.state_dict().items()}
 
             _save_epoch(folder, epoch, model, {
                 "settings": settings, "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(), "shuffle": shuffle.get_state(),
-                "history": history, "best_f1": best_f1, "best_p": best_p})
+                "history": history, "best_f1": best_f1, "best_p": best_p,
+                "best_model": best_model})
             tracking.log_metrics({"train_loss": train_loss, "val_loss": val_loss,
                                   "val_binary_loss": val_binary_loss,
                                   **{f"val_{k}": v for k, v in metrics.items()}}, step=epoch)
@@ -155,8 +165,7 @@ def fit(model, loss_fn, optimizer, train, val, *, decide, classes, folder, epoch
         # Keep the best epoch, and log it to MLflow with the history and the loss plot.
         history = pd.DataFrame(history).set_index("epoch")
         best = int(history["macro_f1"].idxmax())   # the first epoch with the highest macro-F1
-        model.load_state_dict(torch.load(folder / f"epoch_{best:02d}.pt", map_location=device,
-                                         weights_only=True))
+        model.load_state_dict(best_model)           # the weights of that epoch
         torch.save(model.state_dict(), folder / "best.pt")
         tracking.log_metrics({"kept_epoch": best, "kept_val_macro_f1": best_f1})
         tracking.log_files(folder / "history.csv")
@@ -249,7 +258,25 @@ def _load_last(folder, settings):
     if last["settings"] != settings:
         raise ValueError(f"{folder} holds a training with {last['settings']}, not "
                          f"{settings}: use another folder to start a new training")
+    if "best_model" not in last:   # saved before last.pt held the weights of the best epoch
+        last["best_model"] = _saved_best(folder, last["history"])
     return last
+
+
+def _saved_best(folder, history):
+    """The weights of the best epoch of `history`, from its epoch file, else from best.pt.
+
+    Only for a last.pt saved without them. best.pt was then written when a training
+    finished, so it holds the best epoch of that history (as in the committed folders);
+    the epoch files are those trained on this machine.
+    """
+    best = max(history, key=lambda row: row["macro_f1"])["epoch"]   # the first highest
+    for path in (folder / f"epoch_{best:02d}.pt", folder / "best.pt"):
+        if path.exists():
+            return torch.load(path, map_location="cpu", weights_only=True)
+    raise FileNotFoundError(f"{folder} has neither epoch_{best:02d}.pt nor best.pt (the "
+                            f"weights of its best epoch): use another folder to start a "
+                            f"new training")
 
 
 def _save_epoch(folder, epoch, model, state):
