@@ -1,4 +1,4 @@
-"""Build all hand-crafted features (steps 0-4 of notebooks/03_features.ipynb) in one call.
+"""Build all hand-crafted features (steps 0-4 of notebooks/04_features.ipynb) in one call.
 
     from src.features.build import build_features
     feats = build_features(train, val, test)

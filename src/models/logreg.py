@@ -3,7 +3,7 @@
   1. Define a predictor   predict_proba: P(class | x) = softmax(x W + b)
   2. Define a loss        loss_and_grad: weighted cross-entropy + L2 penalty
   3. Optimize the loss    fit: find W, b with L-BFGS (scipy), from our loss and gradient
-  4. Test the model       see src/models/evaluate.py (metrics on validation / test)
+  4. Test the model       see src/models/metrics.py (metrics on validation / test)
 
 One class covers both setups:
   - binary:       classes = ['dga', 'legit']           (softmax with 2 classes =

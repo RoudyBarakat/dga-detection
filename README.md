@@ -19,10 +19,20 @@ data/
   splits/       train/val/test files (made by 00_data_splits.ipynb) and manifest.json
 src/
   data/         build, balance and explore the dataset; dataset.py loads the splits
+  features/     hand-crafted features (split, character, n-gram, Markov, vowel, TLD);
+                build.py computes all 74 and caches them in data/processed/features/
+  models/       character CNN (charcnn.py), input encoding, training loop with checkpoints
+                (train.py), MLflow tracking for every notebook (tracking.py), training
+                plots (plots.py), shared metrics (metrics.py), logistic regression on the
+                hand-crafted features (logreg.py, experiment.py for the multi-seed runs)
 notebooks/
   00_data_splits.ipynb    split the balanced data once and save the splits
   01_data_loading.ipynb   load the saved splits and compute sample weights
   02_baseline.ipynb       majority class (Model 0) and logistic regression (Model 1)
+  03_charcnn.ipynb        character-level CNN (Model 2), binary and family-first
+  04_features.ipynb       the 74 hand-crafted features, step by step
+  05_logreg_features.ipynb  logistic regression (Model 1) on the hand-crafted features
+notes/          findings.md: things we discovered about the data
 proposal/       LaTeX proposal (proposal.tex, refs.bib, figures/, proposal.pdf)
 ```
 
@@ -93,6 +103,26 @@ jupyter notebook
   the TLD, and reports macro-F1, DGA precision and recall, ROC-AUC and recall per DGA
   family on the validation set. It trains on a 100k-row sample by default; set
   `SAMPLE = None` for the full training set (the family setup then takes much longer).
+- `03_charcnn.ipynb` trains Model 2, the character-level CNN of Gregório et al. (2024,
+  Figure 1), in the binary and family-first setups with the training setup of the
+  paper, and reports the same metrics as the baselines. The input is the full domain
+  name, TLD included, padded to 93 characters (the longest domain in the dataset). It trains on a 100k-row sample
+  by default; the full training set needs a GPU (e.g. Colab). Training is saved after
+  every epoch in `checkpoints/checkpoints_binary_cnn_<run>/` and
+  `checkpoints/checkpoints_multifamily_cnn_<run>/` (not committed), and an interrupted
+  run continues from its last saved epoch. Every run is also tracked with MLflow in
+  `mlruns/` (not committed); to browse the runs, run
+  `mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db` from the repository root.
+- `04_features.ipynb` builds the 74 hand-crafted features step by step: the
+  subdomain / name / suffix split (tldextract), character statistics, n-gram and
+  Markov scores learned from legitimate training names (out-of-fold, so no leakage),
+  vowel / consonant patterns and the TLD. `src/features/build.py` computes them all in
+  one call; the first run takes 10-20 minutes and caches the result in
+  `data/processed/features/` (delete that folder if the split or the feature code
+  changes).
+- `05_logreg_features.ipynb` trains Model 1 (logistic regression, `src/models/logreg.py`)
+  on these features in the four setups (binary / family-first, with / without the TLD)
+  over 5 seeds, and logs every run in MLflow (experiment `baselines`).
 
 ## Contributing
 

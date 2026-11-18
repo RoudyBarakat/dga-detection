@@ -1,0 +1,532 @@
+% Format: max 3 pages excluding references, single column.
+% Every paper, dataset, library and model used must be in refs.bib AND cited in the text.
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xurl}
+
+\setlist{nosep,leftmargin=*}
+\setlength{\parskip}{0.4em}
+\setlength{\parindent}{0pt}
+
+\title{\vspace{-2.2em}\textbf{DGA Classifier from Domain Names:\\Family-First or Direct Binary?}}
+\author{
+  Roudy Barakat \quad \texttt{rtb07@mail.aub.edu} \\
+  Abdo Sebailli \quad \texttt{ams86@mail.aub.edu} \\[0.3em]
+  \small American University of Beirut
+}
+\date{\vspace{-1.5em}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent Malware uses domain generation algorithms (DGAs) to reach its servers
+through thousands of throw-away domains, so a DNS filter must recognise generated
+names before any connection is made. We ask whether such a detector should be
+trained on the DGA families and collapse its prediction to DGA/legitimate
+(\emph{family-first}), or trained on the binary label directly (\emph{binary}). On
+2.0M domains (103 DGA families from DGArchive and Kaggle, legitimate names from
+Tranco), we re-run the character-level CNN of Greg{\'o}rio et al.\ in both setups,
+with everything but the training labels held fixed. Family labels change its
+macro-F1 by only $+0.0004$ (0.975 in both setups). We then propose a revised CNN
+that removes four weaknesses of the reference model: a position-dependent output
+layer, inactive units, overfitting, and computation spent on padding. Its results
+are pending.
+% >>> TEAMMATE (Model 1, logistic regression): add one sentence with the Model 1 result here.
+\end{abstract}
+
+\section{Introduction}
+Malware uses Domain Generation Algorithms (DGAs) to create many domains from a
+shared seed, so infected hosts can reach the attacker without a fixed
+address~\cite{plohmann2016dgarchive}. We detect DGAs from the domain name alone.
+This is hard because families differ: some produce random strings
+(\texttt{gqspwpsurdun.ru}, CryptoLocker) or hex hashes (Bamital), while others join
+dictionary words (\texttt{kneemanualgirl.com}) and look legitimate.
+
+\textbf{Question.} For a DGA/legitimate decision, is it better to train on the
+DGA families and collapse the prediction (\emph{family-first}), or to train on
+DGA/legitimate directly (\emph{binary})?
+
+\textbf{Why it matters.} Name-based filters, e.g.\ in DNS resolvers, must judge a
+query before any connection is made. If family-first wins, family labels are
+worth collecting even when only a binary decision is needed; if not, binary
+labels are enough.
+
+\textbf{Goal.} For each model, the difference $\Delta$ in macro-F1 between
+family-first and binary on the same evaluation set. Family-first counts as better
+for a model if $\Delta$ is positive and larger than its uncertainty.
+
+\textbf{Contributions so far.}
+\begin{itemize}
+  \item A dataset of 2.0M domains, half legitimate and half DGA in 103 families,
+  cleaned and balanced so that no family dominates (Section~\ref{sec:data}).
+  \item A controlled comparison: for each model, the two setups share the data,
+  the split, the architecture, the loss and the decision threshold; only the
+  training labels differ (Section~\ref{sec:methods}).
+  \item A re-run of the character-level CNN of
+  \citet{gregorio2024incremental} on our data in both setups: family labels
+  raise its macro-F1 by only $0.0004$, from 0.9747 to 0.9751
+  (Section~\ref{sec:results}).
+  \item A revised CNN that fixes four weaknesses we found in the reference model
+  (Section~\ref{sec:cnn2}); its results are pending.
+  % >>> TEAMMATE (Model 1, logistic regression): add one \item with the Model 1 result.
+\end{itemize}
+
+\section{Related Work}\label{sec:related}
+Name-based DGA detection is usually framed as binary classification of single
+domain names; family classification is studied separately. Table~\ref{tab:related}
+summarises the closest work.
+
+\citet{woodbridge2016lstm} trained a character-level LSTM on 30 DGA families: a
+binary model reached an AUC of 0.9993, but a separate family model only 0.54
+macro-F1 (0.96 when similar families were grouped). They never collapsed the
+family model into a detector, which is the comparison we make.
+
+\citet{gregorio2024incremental} classified 61 families with a character-level
+CNN, in the line of character-level CNNs for text~\cite{zhang2015charcnn}
+(average F1 84\%, some families at 0\%), but with no legitimate class. We adopt
+this CNN as our reference from prior work: we re-run it on our data, add the
+legitimate class, and test whether family confusions still matter after
+collapsing (Section~\ref{sec:cnn}).
+
+\citet{torrealba2025deepdga} (DeepDGA, BiLSTM with word embeddings) exceed 0.97
+precision on dictionary DGAs, where feature-based models stay below 0.89; they
+use a bigger architecture, we test richer labels.
+
+\citet{shahzad2021dga} found little difference between LSTM, BiLSTM and GRU
+(AUC $\approx$ 0.98) for binary detection. Since the architecture barely
+mattered, we change the labels instead; we also follow their 80/10/10 split.
+
+\citet{dahal2019autoencoded} reached 88\% accuracy with autoencoded character
+counts, falling to 78\% on unseen families; we test known families only, so this
+drop marks the limit of our results.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Closest prior work. ``Collapse'': a family model turned into a
+DGA/legitimate detector. Results are on each paper's own data.}
+\label{tab:related}
+\begin{tabularx}{\linewidth}{@{}lllcc>{\raggedright\arraybackslash}X@{}}
+\toprule
+Work & Model & Classes & Legit & Collapse & Reported result \\
+\midrule
+Woodbridge~\cite{woodbridge2016lstm} & char.\ LSTM & 2; 30 families & binary only & no & AUC 0.9993; family macro-F1 0.54 \\
+Greg{\'o}rio~\cite{gregorio2024incremental} & char.\ CNN & 61 families & no & no & average family F1 84\% \\
+Torrealba~\cite{torrealba2025deepdga} & BiLSTM + words & 2 & yes & -- & precision $>$0.97 on dictionary DGAs \\
+Shahzad~\cite{shahzad2021dga} & LSTM, GRU & 2 & yes & -- & AUC $\approx$ 0.98 \\
+Dahal~\cite{dahal2019autoencoded} & autoencoder & 2 & yes & -- & accuracy 88\% (78\% unseen families) \\
+\midrule
+% >>> TEAMMATE (Model 1, logistic regression): add "LR on features" to the Model column of this row.
+This work & char.\ CNN, revised CNN & 2; 103 families & yes & yes & macro-F1 and $\Delta$ per model \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Data}\label{sec:data}
+\textbf{Sources.} DGA domains come from Greg{\'o}rio and Cansian (Mendeley, 2025,
+CC~BY~4.0~\cite{gregorio2025dataset}; 3{,}090{,}661 domains, 160 families, from
+DGArchive~\cite{plohmann2016dgarchive}) and Givre (Kaggle, 2021, license not
+stated, academic use~\cite{givre2021kaggle}; 80{,}000 domains, 7 families).
+Legitimate domains come from the Tranco top 1M~\cite{lepochat2019tranco} (list
+\texttt{64VVX}, \url{https://tranco-list.eu/list/64VVX}); the DGA datasets'
+legitimate rows are not used.
+
+\textbf{Size, input and target.} 1{,}999{,}335 domains: 999{,}664 legitimate and
+999{,}671 DGA in 103 families (Fig.~\ref{fig:data}). The input is the full domain
+name, TLD included; every model sees only this string. The targets are the binary
+label and the family (\texttt{legit} or one of 103). DGA domains are longer (mean
+18.4 vs.\ 13.7 characters), have higher character entropy (3.17 vs.\ 2.79 bits)
+and more digits (15\% vs.\ 4\%). We use pandas~\cite{mckinney2010pandas},
+NumPy~\cite{harris2020numpy} and Matplotlib~\cite{hunter2007matplotlib}.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/data_overview.pdf}
+  \vspace{-1.8em}
+  \caption{(a) Class sizes; (b) domains per DGA family (log scale); (c) domain length.}
+  \label{fig:data}
+\end{figure}
+
+\textbf{Cleaning.} No missing values. We drop 330 domains found in both Tranco and
+a DGA list (e.g.\ \texttt{pywolwnvd.biz}), 141 duplicates and 7 invalid strings,
+and map Kaggle family names to Mendeley's.
+
+\textbf{Balancing.} The 161 cleaned families range from 2 to 519{,}280 domains. We
+keep all legitimate domains, merge the 59 families under 300 domains into
+\texttt{other\_dga}, and cap each family at 29{,}120 so that DGA and legitimate are
+equal in number. Sample weights give legitimate and DGA half each and, within DGA,
+are proportional to $1/\sqrt{n_f}$ ($n_f$: family size; maximum ratio 9.9).
+
+\textbf{Biases.} Tranco favours popular sites. 23 DGA families use a single TLD
+(legitimate domains use 1{,}030), so the TLD alone separates some families. DGA
+data cover only 2021 and late 2025.
+
+\textbf{Split.} One fixed 80/10/10 train/validation/test split, stratified by
+family as in~\cite{shahzad2021dga} and shared by every model and setup: about
+1.6M training, 200k validation and 200k test domains. The validation weights are
+computed in the same way, from the validation family sizes, so training and
+validation losses are on the same scale. The test set is kept for the final
+results.
+
+\section{Methods}\label{sec:methods}
+
+\subsection{Problem formulation}\label{sec:formulation}
+Let $x$ be a domain name, TLD included. Every domain has a binary label
+$y \in \{\texttt{legit}, \text{DGA}\}$ and a family label
+$z \in \{\texttt{legit}, 1, \dots, K\}$ with $K = 103$, where $z = \texttt{legit}$
+exactly when $y = \texttt{legit}$. A model gives class probabilities
+$p(\cdot \mid x)$ over the classes it is trained on, and from them a DGA score
+$s(x)$:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Setup & Training label & DGA score $s(x)$ \\
+\midrule
+Binary & $y$ (2 classes) & $p(\text{DGA} \mid x)$ \\
+Family-first & $z$ ($K + 1 = 104$ classes) & $1 - p(\texttt{legit} \mid x) = \sum_{f=1}^{K} p(f \mid x)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A domain is called DGA when $s(x) \ge \tau$, with $\tau = 0.5$ in both setups.
+The family-first score adds up the probabilities of all families. Taking the most
+likely class instead would compare \texttt{legit} with the single most likely
+family, and call legitimate a domain that the model believes is a DGA without
+knowing its family (e.g.\ $p(\texttt{legit} \mid x) = 0.4$ and three families at
+0.2 each).
+
+For each model,
+$\Delta = \text{macro-F1}_{\text{family-first}} - \text{macro-F1}_{\text{binary}}$
+on the same evaluation set, where
+$\text{macro-F1} = \tfrac{1}{2}\big(F_1^{\text{DGA}} + F_1^{\texttt{legit}}\big)$ is
+computed on the DGA/legitimate decision in both setups. Family-first is better for
+a model if $\Delta > 0$ by more than its uncertainty (Section~\ref{sec:setup}).
+
+% >>> TEAMMATE (Model 1, logistic regression): add your subsection HERE, e.g.
+% \subsection{Hand-crafted features and logistic regression (Model 1)}\label{sec:lr}
+% (74 features, out-of-fold n-gram/Markov fitting, standardisation, loss + L2, L-BFGS,
+%  stacking, PCA). The CNN subsections renumber automatically.
+
+\subsection{Input encoding}
+Each character of $x$ becomes its ASCII code, and the sequence is padded with 0 at
+the end to 93 characters, the longest domain in the dataset, so no domain is cut
+(Greg{\'o}rio et al.\ used 70, the longest in their data). An embedding layer with
+256 rows maps each code to a learned vector.
+
+\subsection{Reference CNN (Model 2)}\label{sec:cnn}
+We re-implement the character-level CNN of \citet{gregorio2024incremental} (their
+Fig.~1) in PyTorch~\cite{paszke2019pytorch}; Table~\ref{tab:arch} gives its layers.
+Six one-dimensional convolutions, each followed by a ReLU, learn local character
+patterns such as hex runs, vowel--consonant alternation or word pieces.
+Convolutions and max-pooling use stride 1 and same padding, so the sequence keeps
+its 93 positions, as the paper's flatten size ($70 \times 30 = 2{,}100$) implies.
+We adapt the model in three ways: the input has 93 characters instead of 70; the
+output layer has 2 units (binary) or 104 (family-first), where the paper had one
+softmax over its families and no legitimate class; and the loss uses the sample
+weights of Section~\ref{sec:data}.
+
+\textbf{Loss.} For a batch of $B$ domains with training labels $t_i$ ($y_i$ or
+$z_i$) and sample weights $w_i$, we minimise the loss of the paper (their
+Table~2) with the weights added:
+\begin{equation}
+L = \underbrace{\frac{1}{B}\sum_{i=1}^{B} w_i \big(-\log p(t_i \mid x_i)\big)}_{\text{weighted cross-entropy}}
+\;+\; \underbrace{\lambda_1 \sum |W| + \lambda_2 \sum W^2}_{\text{elastic-net penalty}},
+\label{eq:loss}
+\end{equation}
+where $W$ are the convolution and dense weights (not the embedding or the biases),
+$\lambda_1 = 10^{-5}$ and $\lambda_2 = 10^{-4}$. The penalty is the elastic
+net~\cite{zou2005elasticnet}: the L1 term pushes weights to zero, the L2 term
+shrinks them all. The softmax that gives $p(\cdot \mid x)$ is applied inside the
+loss, to the logits of the output layer; for two classes it is equivalent to a
+sigmoid on the difference of the two logits.
+
+\begin{table}[t]
+\centering
+\small
+\caption{The reference CNN of \citet{gregorio2024incremental} as we re-run it
+(Model 2) and our revised CNN (Model 2b). Shapes are length $\times$ channels;
+conv $F{\times}k$ is $F$ filters of width $k$.}
+\label{tab:arch}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
+\toprule
+Stage & Model 2 (reference) & Model 2b (revised) \\
+\midrule
+Input & 93 ASCII codes; padding read as characters & same codes; padding masked, each batch cut to its longest domain \\
+Embedding & $256 \to 60$; output $93 \times 60$ & $256 \to 60$, padding row fixed at zero \\
+Block 1 & conv $500{\times}7$, conv $250{\times}6$, max-pool 6; output $93 \times 250$ & conv $128{\times}7$, conv $128{\times}6$ \\
+Block 2 & conv $60{\times}5$, conv $60{\times}5$, max-pool 4; output $93 \times 60$ & conv $128{\times}5$, conv $128{\times}5$ \\
+Block 3 & conv $30{\times}4$, conv $30{\times}3$, max-pool 3; output $93 \times 30$ & conv $128{\times}4$, conv $128{\times}3$ \\
+After each conv & ReLU & batch normalisation, ReLU \\
+Summary & flatten: $93 \times 30 = 2{,}790$ & max and mean of each filter, $\log$ length: 257 \\
+Dense & 15 units & dropout 0.5, 128 units + ReLU, dropout 0.5 \\
+Output & 2 (binary) or 104 (family-first), softmax & same \\
+Parameters & $\approx$ 1.12M & $\approx$ 0.48M \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Revised CNN (Model 2b)}\label{sec:cnn2}
+Inspecting the trained Model 2 on 20{,}000 validation domains showed four
+weaknesses. Model 2b changes the architecture to remove each of them
+(Table~\ref{tab:arch}) and keeps everything else: the data, the setups, the loss
+and the training (Section~\ref{sec:setup}). A difference in results therefore
+comes from the architecture alone.
+\begin{enumerate}
+  \item \emph{Position-dependent output.} With stride-1 pooling, all 93 positions
+  reach the flatten layer, and the dense layer must learn each pattern again at
+  every position. Model 2b summarises each filter by its maximum~\cite{kim2014cnn}
+  and its mean over the real characters: the maximum says whether a pattern occurs
+  anywhere in the domain, the mean how much of the domain has it, and both are the
+  same wherever the pattern occurs. The pooling loses the length, so $\log$ of the
+  length is added: 257 numbers in all.
+  \item \emph{Bottleneck.} In the binary Model 2, 6 of the 15 dense units and 11
+  of the 30 last filters never activate. Model 2b uses 128 filters in every
+  convolution and 128 dense units, and keeps the paper's kernel sizes
+  (7, 6, 5, 5, 4, 3).
+  \item \emph{Overfitting.} The validation loss of Model 2 is lowest at epoch 9
+  (binary) and 13 (family-first), then rises (Fig.~\ref{fig:loss}). Model 2b adds
+  batch normalisation~\cite{ioffe2015batchnorm} after every convolution, and
+  dropout~\cite{srivastava2014dropout} of 0.5 before and after the dense layer.
+  \item \emph{Padding.} Padding fills 83\% of the 93 positions, and Model 2 reads
+  it as characters. Model 2b keeps the padding embedding at zero, leaves padding
+  out of the pooling and the batch normalisation, and cuts each batch to its
+  longest domain. Its output no longer depends on the padding, and a domain costs
+  about 18M multiply-adds instead of 99M.
+\end{enumerate}
+Model 2b has no pooling between its convolutions. With stride 1, its receptive
+field is $1 + \sum_i (k_i - 1) = 25$ characters, longer than most domains (mean
+18.4 characters for DGA, 13.7 for legitimate).
+
+\section{Experimental Setup}\label{sec:setup}
+\textbf{Metrics.} All metrics except ROC-AUC are computed on the DGA/legitimate
+decision at $\tau = 0.5$, in both setups.
+\begin{itemize}
+  \item \emph{Macro-F1}, the main metric: the mean of the F1 of the DGA class and
+  of the legitimate class. Plain F1 scores only the positive class and ignores the
+  legitimate domains passed correctly; macro-F1 scores both classes equally, so
+  favouring one class does not pay. \citet{woodbridge2016lstm} also use it.
+  \item \emph{DGA precision and recall}: the two error costs separately. A false
+  negative leaves a host talking to its attacker; a false positive blocks a real
+  service (Section~\ref{sec:limits}).
+  \item \emph{ROC-AUC}: threshold-free; it measures how well the score ranks DGA
+  domains above legitimate ones, and allows comparison with published work.
+  \item \emph{Recall per family}: which DGA families are missed, e.g.\
+  dictionary-based ones.
+\end{itemize}
+Accuracy is not reported, as it hides which errors are made. A majority-class
+predictor reaches a macro-F1 of $1/3$ on our balanced data, the floor every model
+must beat.
+
+\textbf{Training.} Both CNNs, in both setups, use the training settings of
+\citet{gregorio2024incremental} (their Table~2): Adam~\cite{kingma2015adam} with a
+learning rate of $10^{-4}$, shuffled mini-batches of 250 domains, and the penalties
+of Eq.~\eqref{eq:loss}. We train for 40 epochs instead of 20. After every epoch the
+model is scored on the validation set, and we keep the weights of the epoch with
+the highest validation macro-F1 (the paper keeps the best accuracy). Every run
+starts from the same seed. Runs are tracked with MLflow~\cite{zaharia2018mlflow}
+and checkpointed after every epoch, so an interrupted run continues where it
+stopped.
+
+% >>> TEAMMATE (Model 1, logistic regression): add one or two sentences on how Model 1 is trained (end of Training).
+
+\textbf{Losses.} Per epoch we record $J_{\text{train}}$, the mean loss over the
+epoch's batches, and $J_{\text{val}}$, the loss on the whole validation set. The
+losses of the two setups are not on the same scale: the family-first cross-entropy
+also counts confusions between DGA families, which do not change the
+DGA/legitimate decision. We therefore also record the \emph{binary validation
+loss}, the weighted cross-entropy of the DGA/legitimate decision alone, with
+$p(\text{DGA} \mid x) = s(x)$ and without the penalty. It is the loss on which the
+two setups can be compared.
+
+\textbf{Uncertainty.} So far each setup has one run, so the uncertainty of $\Delta$
+is not yet measured. We will estimate it with repeated seeds and with a paired
+bootstrap on the evaluation set: resample its domains with replacement, recompute
+$\Delta$ from the saved predictions of both setups, and report the 95\% interval.
+Family-first then counts as better for a model if the interval lies above zero.
+
+\textbf{Comparisons.} For each model, the binary setup is the reference for
+family-first, and the reference CNN (Model 2) is the reference for the revised CNN
+(Model 2b). Each model will also be run without the TLD, since the TLD alone
+separates some families. Published results (Table~\ref{tab:related}) are on other
+data, so comparisons with them are only indicative. All results in this draft are
+on the validation set; the test set is used once, for the final results.
+
+\section{Results}\label{sec:results}
+All results in this draft are on the validation set, from one run per setup.
+Table~\ref{tab:results} reports the reference CNN. \textbf{The revised CNN
+(Model 2b) is still being trained; its results are not part of this draft} and
+will be reported in the final version, on the same validation set.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Validation results on the DGA/legitimate decision ($\tau = 0.5$).
+$\Delta$: family-first minus binary. Kept epoch: highest validation macro-F1.}
+\label{tab:results}
+\begin{tabular}{@{}llccccc@{}}
+\toprule
+Model & Setup & Macro-F1 & DGA precision & DGA recall & ROC-AUC & Kept epoch \\
+\midrule
+% >>> TEAMMATE (Model 1, logistic regression): add Model 1 rows below the majority class (binary, family-first, Delta,
+% stacking, PCA; with and without TLD). VALIDATION numbers only, like the rest of the table.
+Majority class & -- & 0.3333 & -- & -- & 0.5000 & -- \\
+\midrule
+Model 2 (reference) & binary & 0.9747 & 0.9753 & 0.9739 & 0.9966 & 18 \\
+ & family-first & 0.9751 & 0.9772 & 0.9729 & 0.9966 & 31 \\
+ & $\Delta$ & $+0.0004$ & $+0.0019$ & $-0.0010$ & $0.0000$ & \\
+\midrule
+Model 2b (revised) & binary & \multicolumn{5}{c}{\emph{pending: training in progress}} \\
+ & family-first & \multicolumn{5}{c}{\emph{pending: training in progress}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Family labels barely change the reference CNN.} Family-first raises
+macro-F1 by 0.0004 and DGA precision by 0.0019, lowers DGA recall by 0.0010, and
+leaves ROC-AUC unchanged at 0.9966. The two setups therefore rank domains equally
+well and differ only slightly in which side of the threshold a few domains fall.
+With one run per setup, a gain of 0.0004 cannot yet be told apart from
+run-to-run variation (Section~\ref{sec:setup}), so we do not count it as a win for
+family-first.
+
+\textbf{Training.} Both setups start to overfit early (Fig.~\ref{fig:loss}):
+$J_{\text{val}}$ is lowest at epoch 9 (binary) and 13 (family-first), then rises
+while $J_{\text{train}}$ keeps falling. The kept epochs, chosen by macro-F1, are
+later (18 and 31): the decisions at $\tau = 0.5$ keep improving or stay stable
+while the predicted probabilities become over-confident, which raises the loss
+without changing the decisions.
+
+\textbf{Comparison with published results.} The reference CNN reaches a ROC-AUC of
+0.9966, between the 0.98 of \citet{shahzad2021dga} and the 0.9993 of
+\citet{woodbridge2016lstm} (Table~\ref{tab:related}). Those results are on other
+data and other families, so the comparison only shows that our re-run is in the
+expected range. The family-level F1 of \citet{gregorio2024incremental} (84\%) is
+not comparable with our numbers yet, since we score the collapsed DGA/legitimate
+decision; the family-level score of our family-first model is a next step.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/cnn_loss.png}
+  \caption{Training and validation loss of the reference CNN (Model 2) per epoch.
+  Dotted: the kept epoch, the one with the highest validation macro-F1. The two
+  panels are on different scales: the family loss also counts confusions between
+  DGA families.}
+  \label{fig:loss}
+\end{figure}
+
+\section{Discussion}\label{sec:discussion}
+\textbf{Why family labels add little to the CNN.} In the binary setup, the DGA
+class is a union of very different families: random strings, hex hashes and
+dictionary words. A model that can only draw simple boundaries needs the family
+labels to separate each group from the legitimate names. The reference CNN has
+about 1.1M parameters and several non-linear layers; it can learn the patterns of
+each family in its hidden layers from the binary label alone, so the family labels
+bring little new information for the DGA/legitimate decision. Our result so far is
+consistent with this: for a character-level CNN, binary labels appear to be enough.
+
+% >>> TEAMMATE (Model 1, logistic regression): in the paragraph above, add that the gain shrinks with flexibility
+% (LR +0.019 vs CNN +0.0004); add a short paragraph on why stacking and PCA did not help.
+
+\textbf{Precision against recall.} Family-first trades a little recall for a
+little precision at the same threshold. Since ROC-AUC is unchanged, this is a
+shift along the same trade-off rather than a better model, and moving $\tau$
+would undo it.
+
+\textbf{What Model 2b will test.} The revised CNN is position-invariant,
+regularised and ignores padding. If family labels still do not help it, the answer
+for flexible character-level models is that binary labels suffice; if they help,
+the near-zero $\Delta$ of Model 2 came from its weaknesses rather than from the
+labels.
+
+\section{Implications, Limitations and Risks}\label{sec:limits}
+\textbf{Implications so far.} For a character-level CNN, collecting family labels
+did not improve the DGA/legitimate decision. Families that no setup separates from
+legitimate domains, probably the dictionary-based ones, need network features
+such as the NXDOMAIN rate or query periodicity~\cite{antonakakis2012pleiades}.
+
+\textbf{Limitations of this draft.}
+\begin{itemize}
+  \item \emph{Pending results:} the revised CNN (Model 2b) is still training.
+  \item \emph{One run per setup:} the uncertainty of $\Delta$ is not yet measured.
+  \item \emph{Validation only:} the test set is kept for the final results.
+  \item \emph{No per-family analysis yet:} we do not yet report which families
+  each setup misses.
+\end{itemize}
+
+% >>> TEAMMATE (Model 1, logistic regression): add your model's failure case to the list above if it applies (e.g. dictionary DGAs such as matsnu).
+
+\textbf{Risks.}
+\begin{itemize}
+  \item \emph{Unequal errors:} a false negative leaves a host talking to its
+  attacker; a false positive blocks a real service. Since most DNS traffic is
+  legitimate, even a small false-positive rate means many alarms.
+  \item \emph{Data bias:} Tranco~\cite{lepochat2019tranco} favours popular sites,
+  so unusual legitimate names (non-English, short, CDN hosts) may be flagged.
+  Families with fewer than 300 domains are merged into one class, so we report no
+  per-family results for them. The DGA data cover only 2021 and late 2025.
+  \item \emph{TLD shortcut:} 23 DGA families use a single TLD, so a model can
+  separate them by the TLD alone; the runs without the TLD will measure this.
+  \item \emph{Validity:} we test only families seen in training; new or
+  adversarial DGAs may not be detected, and accuracy can drop sharply on unseen
+  families~\cite{dahal2019autoencoded}.
+\end{itemize}
+
+\section{Next Steps and Timeline}\label{sec:next}
+\begin{enumerate}
+  \item \emph{Revised CNN:} results of Model 2b in both setups, compared with
+  Model 2 on the same validation set.
+  \item \emph{Uncertainty:} repeated seeds and a paired bootstrap for $\Delta$
+  (Section~\ref{sec:setup}).
+  \item \emph{TLD ablation:} both CNNs without the TLD.
+  \item \emph{Per-family analysis:} recall per family in both setups, and the
+  family-level F1 of the family-first models, comparable with
+  \citet{gregorio2024incremental}.
+  \item \emph{Further architectures}, each in both setups: a convolutional
+  autoencoder~\cite{masci2011cae}, to test whether a compact code of the domain
+  learned without labels beats the current CNN; a character-level
+  Transformer~\cite{vaswani2017attention}, whose attention relates characters
+  across the whole name and may help with dictionary DGAs; and CNN embeddings
+  joined with hand-crafted name features.
+  \item \emph{Final results:} one run of every final configuration on the test
+  set.
+\end{enumerate}
+
+\smallskip
+{\footnotesize
+\begin{tabular}{@{}lp{0.6\linewidth}p{0.2\linewidth}@{}}
+  \toprule
+  Week & Tasks & Milestone \\
+  \midrule
+  Nov 16--22 & Model 2b trained in both setups; first draft of the report & Draft report \\
+  Nov 23--29 & Uncertainty, TLD ablation, per-family analysis; autoencoder and Transformer & All models trained \\
+  Nov 30--Dec 6 & Final test runs; final report, slides and presentation & Final report \\
+  \bottomrule
+\end{tabular}}
+
+\section{Code}
+Code: \url{https://github.com/RoudyBarakat/dga-detection}. The notebook
+\texttt{03\_charcnn.ipynb} trains the reference CNN (Model 2) and
+\texttt{06\_charcnn2.ipynb} the revised CNN (Model 2b); the architectures, the
+training loop, the metrics and the MLflow tracking are in \texttt{src/models/}.
+Raw datasets are not redistributed; the README links to them and gives the setup
+instructions.
+% >>> TEAMMATE (Model 1, logistic regression): add your notebook names here.
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

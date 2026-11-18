@@ -31,7 +31,8 @@ from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.preprocessing import StandardScaler
 
-from src.models.evaluate import binary_metrics, p_dga_from_proba, recall_per_family
+from src.models.evaluate import p_dga_from_proba
+from src.models.metrics import binary_metrics, recall_per_family
 from src.models.logreg import LogReg
 
 SETUPS = [("binary", "yes"), ("binary", "no"), ("family", "yes"), ("family", "no")]
