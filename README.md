@@ -21,7 +21,8 @@ src/
   data/         build, balance and explore the dataset; dataset.py loads the splits
   features/     hand-crafted features (split, character, n-gram, Markov, vowel, TLD);
                 build.py computes all 74 and caches them in data/processed/features/
-  models/       character CNN (charcnn.py), input encoding, training loop with checkpoints
+  models/       character CNNs (charcnn.py: the paper's; charcnn2.py: revised), input
+                encoding, training loop with checkpoints
                 (train.py), MLflow tracking for every notebook (tracking.py), training
                 plots (plots.py), shared metrics (metrics.py), logistic regression on the
                 hand-crafted features (logreg.py, experiment.py for the multi-seed runs)
@@ -32,6 +33,7 @@ notebooks/
   03_charcnn.ipynb        character-level CNN (Model 2), binary and family-first
   04_features.ipynb       the 74 hand-crafted features, step by step
   05_logreg_features.ipynb  logistic regression (Model 1) on the hand-crafted features
+  06_charcnn2.ipynb       revised character-level CNN (Model 2b), compared with Model 2
 notes/          findings.md: things we discovered about the data
 proposal/       LaTeX proposal (proposal.tex, refs.bib, figures/, proposal.pdf)
 ```
@@ -123,6 +125,15 @@ jupyter notebook
 - `05_logreg_features.ipynb` trains Model 1 (logistic regression, `src/models/logreg.py`)
   on these features in the four setups (binary / family-first, with / without the TLD)
   over 5 seeds, and logs every run in MLflow (experiment `baselines`).
+- `06_charcnn2.ipynb` trains Model 2b, the CNN of 03 with four changes to its
+  architecture (`src/models/charcnn2.py`): global max and mean pooling over the real
+  characters instead of the flatten, 128 filters in every convolution and a dense layer
+  of 128 instead of 15, dropout and batch normalization, and the padding ignored. The
+  data, setups, loss and training are those of 03, and the notebook ends with a
+  comparison with the trained Model 2. Training is saved in
+  `checkpoints/checkpoints_binary_cnn2_<run>/` and
+  `checkpoints/checkpoints_multifamily_cnn2_<run>/` (not committed), and tracked in the
+  MLflow experiment `charcnn`, with the runs of 03.
 
 ## Contributing
 

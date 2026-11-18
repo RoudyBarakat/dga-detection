@@ -28,6 +28,7 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 import torch
+from torch import nn
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, TensorDataset
 
 from src.models import tracking
@@ -68,9 +69,11 @@ def p_dga(proba, task, classes):
 
 
 def penalty(model, l1, l2):
-    """L1 + L2 of the convolution and dense weights, added to the loss as Keras does."""
-    weights = [p for name, p in model.named_parameters()
-               if name.endswith("weight") and not name.startswith("embedding")]
+    """L1 + L2 of the convolution and dense weights, added to the loss as Keras does.
+
+    Not the embedding, the biases or the batch normalization (CharCNN2).
+    """
+    weights = [m.weight for m in model.modules() if isinstance(m, (nn.Conv1d, nn.Linear))]
     return sum(l1 * w.abs().sum() + l2 * w.square().sum() for w in weights)
 
 
