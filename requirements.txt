@@ -1,8 +1,10 @@
 pandas>=3.0
 numpy>=2.0
+scipy>=1.13
 scikit-learn>=1.5
+joblib>=1.4
 matplotlib>=3.11
 notebook>=7.0
-tldextract>=5.0
+tldextract==5.4.0  # pinned: the bundled suffix list must be the same for everyone
 torch>=2.4
 mlflow>=3.18
