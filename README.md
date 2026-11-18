@@ -105,7 +105,7 @@ jupyter notebook
   `SAMPLE = None` for the full training set (the family setup then takes much longer).
 - `03_charcnn.ipynb` trains Model 2, the character-level CNN of Gregório et al. (2024,
   Figure 1), in the binary and family-first setups with the training setup of the
-  paper, and reports the same metrics as the baselines. The input is the full domain
+  paper (Table 2) but 40 epochs instead of 20, and reports the same metrics as the baselines. The input is the full domain
   name, TLD included, padded to 93 characters (the longest domain in the dataset). It trains on a 100k-row sample
   by default; the full training set needs a GPU (e.g. Colab). Training is saved after
   every epoch in `checkpoints/checkpoints_binary_cnn_<run>/` and
