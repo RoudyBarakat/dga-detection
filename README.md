@@ -24,7 +24,8 @@ src/
   models/       character CNNs (charcnn.py: the paper's; charcnn2.py: revised), input
                 encoding, training loop with checkpoints
                 (train.py), MLflow tracking for every notebook (tracking.py), training
-                plots (plots.py), shared metrics (metrics.py), logistic regression on the
+                and latent-space plots (plots.py), the latent space of the CNNs
+                (latent.py), shared metrics (metrics.py), logistic regression on the
                 hand-crafted features (logreg.py, experiment.py for the multi-seed runs)
 notebooks/
   00_data_splits.ipynb    split the balanced data once and save the splits
@@ -130,7 +131,9 @@ jupyter notebook
   characters instead of the flatten, 128 filters in every convolution and a dense layer
   of 128 instead of 15, dropout and batch normalization, and the padding ignored. The
   data, setups, loss and training are those of 03, and the notebook ends with a
-  comparison with the trained Model 2. Training is saved in
+  comparison with the trained Model 2, including their latent spaces
+  (`src/models/latent.py`): which DGA families sit among legitimate domains or among
+  each other, and what to do about it. Training is saved in
   `checkpoints/checkpoints_binary_cnn2_<run>/` and
   `checkpoints/checkpoints_multifamily_cnn2_<run>/` (not committed), and tracked in the
   MLflow experiment `charcnn`, with the runs of 03.

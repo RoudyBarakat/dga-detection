@@ -52,15 +52,21 @@ def set_seed(seed):
 
 @torch.no_grad()
 def predict_proba(model, x, batch_size=4096):
-    """Softmax probabilities of every task: {task: array of shape (n, classes)}."""
+    """Softmax probabilities of every task: {task: array of shape (n, classes)}.
+
+    The domains are run from the shortest to the longest (see _by_length) and the
+    probabilities are returned in the order of `x`.
+    """
     device = next(model.parameters()).device
     model.eval()
+    order = _by_length(x)
+    x = np.asarray(x)[order]
     out = {task: [] for task in model.heads}
     for start in range(0, len(x), batch_size):
         logits = model(torch.as_tensor(x[start:start + batch_size]).to(device))
         for task, z in logits.items():
             out[task].append(z.softmax(1).cpu().numpy())
-    return {task: np.concatenate(p) for task, p in out.items()}
+    return {task: _unsort(np.concatenate(p), order) for task, p in out.items()}
 
 
 def p_dga(proba, task, classes):
@@ -213,10 +219,16 @@ def evaluate(model, loss_fn, split, decide, classes, device, batch_size=4096):
     (binary_cross_entropy on the `decide` output), without the penalty on the weights.
     J_val of a family model also counts the DGA families taken for one another; the
     binary loss does not, so it is on the same scale for a binary and a family model.
+    The domains are run from the shortest to the longest (see _by_length); the losses
+    are sums over the domains and P(DGA) is returned in the order of `split`.
     """
     model.eval()
+    order = _by_length(split.x)
+    index = torch.as_tensor(order)
     x, w, y = _tensors(split)
-    dga = _tensor(split.dga).bool()
+    x, w = x[index], w[index]
+    y = {t: v[index] for t, v in y.items()} if isinstance(y, dict) else y[index]
+    dga = _tensor(split.dga).bool()[index]
     legit = list(classes[decide]).index("legit")
     total, binary_total, proba = 0.0, 0.0, []
     for start in range(0, len(x), batch_size):
@@ -230,13 +242,30 @@ def evaluate(model, loss_fn, split, decide, classes, device, batch_size=4096):
         binary_total += (binary * wb).sum().item()
         proba.append(logits[decide].softmax(1).cpu().numpy())
     return (total / len(x), binary_total / len(x),
-            p_dga({decide: np.concatenate(proba)}, decide, classes))
+            _unsort(p_dga({decide: np.concatenate(proba)}, decide, classes), order))
 
 
 def load_history(folder):
     """The saved history of the training in `folder` (one row per epoch), or None."""
     path = Path(folder) / "history.csv"
     return pd.read_csv(path, index_col="epoch") if path.exists() else None
+
+
+def _by_length(x):
+    """Row order of the encoded domains `x`, from the shortest to the longest.
+
+    CharCNN2 cuts each batch to its longest domain, so in prediction (where a batch has
+    no effect on the output of a domain) batches of similar lengths run on much less
+    padding: about 2.5 times faster on the validation set. CharCNN is not affected.
+    """
+    return np.argsort((np.asarray(x) != 0).sum(1), kind="stable")
+
+
+def _unsort(values, order):
+    """`values` computed on the rows x[order], put back in the order of x."""
+    out = np.empty_like(values)
+    out[order] = values
+    return out
 
 
 def _tensors(split):

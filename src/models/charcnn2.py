@@ -38,38 +38,79 @@ from src.models.encoding import VOCAB
 KERNEL_SIZES = (7, 6, 5, 5, 4, 3)   # the paper's six convolutions
 
 
-class MaskedBatchNorm(nn.BatchNorm1d):
-    """Batch normalization whose statistics are computed over the real characters only.
+class _MaskedBatchNormReLU(torch.autograd.Function):
+    """relu(batch normalization over the real characters) * mask, in training.
+
+    On the GPU this layer is limited by memory traffic, not by arithmetic: every
+    elementwise operation reads and writes the whole (batch, channels, length) tensor.
+    Written with plain tensor operations, autograd runs about 12 such passes forward and
+    twice as many backward; this function does the same computation in fewer passes
+    (one pass for both statistics, the affine folded into one scale and shift, a
+    hand-written backward).
+    """
+
+    @staticmethod
+    def forward(ctx, h, mask, weight, bias, eps):
+        n = mask.sum()                                 # real characters in the batch
+        hm = h * mask                                  # the padding set to zero
+        var_all, mean_all = torch.var_mean(hm, dim=(0, 2), correction=0)   # one pass, all positions
+        k = hm.numel() / hm.shape[1] / n               # positions / real characters
+        mean = mean_all * k                            # the statistics of the real characters
+        var = (k * var_all - k * (k - 1) * mean_all.square()).clamp_min(0)
+        inv = torch.rsqrt(var + eps)
+        scale = weight * inv
+        y = torch.addcmul((bias - mean * scale)[:, None], h, scale[:, None]).mul_(mask).relu_()
+        ctx.save_for_backward(h, mask, y, mean, inv, weight, n)
+        ctx.mark_non_differentiable(mean, var)
+        return y, mean, var
+
+    @staticmethod
+    def backward(ctx, grad_y, _grad_mean, _grad_var):
+        h, mask, y, mean, inv, weight, n = ctx.saved_tensors
+        g = torch.ops.aten.threshold_backward(grad_y, y, 0)   # 0 where the ReLU is off and at padding
+        grad_bias = g.sum((0, 2))
+        grad_weight = ((g * h).sum((0, 2)) - mean * grad_bias) * inv
+        # Gradient through the batch statistics: grad_h = (a g + b h + c) * mask.
+        a = weight * inv
+        b = -a * inv * grad_weight / n
+        c = -a * grad_bias / n - b * mean
+        grad_h = torch.addcmul(c[:, None], h, b[:, None]).addcmul_(g, a[:, None]).mul_(mask)
+        return grad_h, None, grad_weight, grad_bias, None
+
+
+class MaskedBatchNormReLU(nn.BatchNorm1d):
+    """Batch normalization whose statistics are computed over the real characters only,
+    followed by a ReLU.
 
     With the padding counted, the mean and variance would depend on how much padding a
-    batch has. The padding positions come out as zero.
+    batch has. The padding positions come out as zero. Same parameters and running
+    statistics as nn.BatchNorm1d, used for prediction in the same way.
     """
 
     def forward(self, h, mask):   # h: (batch, channels, length), mask: (batch, 1, length)
         if self.training:
-            n = mask.sum()
-            mean = (h * mask).sum((0, 2)) / n
-            var = ((h - mean[:, None]) ** 2 * mask).sum((0, 2)) / n
-            with torch.no_grad():   # running statistics, used for prediction (as nn.BatchNorm1d)
+            y, mean, var = _MaskedBatchNormReLU.apply(h, mask, self.weight, self.bias, self.eps)
+            with torch.no_grad():
+                n = mask.sum()
                 self.running_mean.lerp_(mean, self.momentum)
                 self.running_var.lerp_(var * n / (n - 1), self.momentum)
                 self.num_batches_tracked += 1
-        else:
-            mean, var = self.running_mean, self.running_var
-        h = (h - mean[:, None]) / torch.sqrt(var[:, None] + self.eps)
-        return (h * self.weight[:, None] + self.bias[:, None]) * mask
+            return y
+        scale = self.weight * torch.rsqrt(self.running_var + self.eps)
+        shift = self.bias - self.running_mean * scale
+        return torch.addcmul(shift[:, None], h, scale[:, None]).mul_(mask).relu_()
 
 
 class ConvBlock(nn.Module):
-    """Convolution, batch normalization over the real characters, ReLU."""
+    """Convolution, then batch normalization over the real characters and a ReLU."""
 
     def __init__(self, c_in, c_out, size):
         super().__init__()
         self.conv = nn.Conv1d(c_in, c_out, size, padding="same")
-        self.norm = MaskedBatchNorm(c_out)
+        self.norm = MaskedBatchNormReLU(c_out)
 
     def forward(self, h, mask):
-        return torch.relu(self.norm(self.conv(h), mask))
+        return self.norm(self.conv(h), mask)
 
 
 class CharCNN2(nn.Module):
@@ -86,7 +127,11 @@ class CharCNN2(nn.Module):
     def forward(self, x):
         x = x.long()
         length = (x != 0).sum(1, keepdim=True)              # (batch, 1): real characters
-        x = x[:, :length.max()]                            # cut the batch to its longest domain
+        # Cut the batch to its longest domain: the output is the same, only faster. Not
+        # while torch.export traces the model (MLflow, tracking.log_model): it cannot
+        # trace a cut whose size depends on the data.
+        if not torch.compiler.is_compiling():
+            x = x[:, :length.max()]
         mask = (x != 0).unsqueeze(1).float()               # (batch, 1, length): 1 = character
         h = self.embedding(x).transpose(1, 2)              # (batch, embed_dim, length)
         for block in self.convs:
