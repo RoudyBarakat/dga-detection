@@ -43,7 +43,8 @@ strings (\texttt{gqspwpsurdun.ru}) or hex hashes, others join dictionary words
 families and collapse the prediction (\emph{family-first}), or to train on the
 binary label directly (\emph{binary})? For each model we measure
 $\Delta = \text{macro-F1}_{\text{family-first}} - \text{macro-F1}_{\text{binary}}$
-on the same evaluation set, with everything but the training labels held fixed.
+on the same evaluation set, with everything but the training labels held fixed;
+macro-F1 is the mean of the F1 of the DGA class and of the legitimate class.
 Family-first counts as better if $\Delta > 0$ by more than its uncertainty.
 
 \textbf{Dataset.} 1{,}999{,}335 domains: 999{,}664 legitimate from the Tranco top
@@ -97,10 +98,15 @@ described by 74 features: 7 basic (length, entropy, digit and hyphen ratios,
 features and 54 TLD features (one-hot of the 50 most common suffixes and 4
 others). The n-gram and Markov counts are learned from legitimate training names
 out-of-fold (10 folds), so no domain is scored with counts it helped build. LR
-predicts $\operatorname{softmax}(xW + b)$ on the standardised features and
-minimises the weighted cross-entropy with an L2 penalty
-($\lambda = 10^{-4}$) by full-batch L-BFGS~\cite{liu1989lbfgs,virtanen2020scipy}
-on the whole training set. We also test three variants: \emph{stacking}~\cite{wolpert1992stacked}
+predicts $p(k \mid x) = \operatorname{softmax}(xW + b)_k$ on the standardised
+features, with $W$ of size $74 \times C$ ($C = 2$ or 104), and minimises the
+weighted cross-entropy with an L2 penalty
+\begin{equation}
+L_{\text{LR}} = \sum_{i} \bar{w}_i \big(-\log p(t_i \mid x_i)\big) + \frac{\lambda}{2}\lVert W \rVert^2,
+\qquad \bar{w}_i = \frac{w_i}{\sum_j w_j},
+\end{equation}
+where $t_i$ is the training label, $w_i$ the sample weight and $\lambda = 10^{-4}$,
+by full-batch L-BFGS~\cite{liu1989lbfgs,virtanen2020scipy} on the whole training set. We also test three variants: \emph{stacking}~\cite{wolpert1992stacked}
 (out-of-fold family-first probabilities fed into a binary LR), and reducing the
 features with \emph{PCA}~\cite{jolliffe2002pca} or \emph{LDA}~\cite{fisher1936lda}
 to the number of components that keeps 95\% or 99\% of the variance.
@@ -109,8 +115,14 @@ to the number of components that keeps 95\% or 99\% of the variance.
 \citet{gregorio2024incremental} in PyTorch~\cite{paszke2019pytorch}: an embedding
 of the 93 padded ASCII codes, six convolutions with ReLU in three blocks, a
 15-unit dense layer and an output of 2 or 104 units ($\approx$1.1M parameters).
-It is trained with Adam~\cite{kingma2015adam} on the weighted cross-entropy plus
-an elastic-net penalty~\cite{zou2005elasticnet}, for 40 epochs, keeping the epoch
+It is trained with Adam~\cite{kingma2015adam} on mini-batches of $B = 250$
+domains, minimising the weighted cross-entropy plus an elastic-net
+penalty~\cite{zou2005elasticnet} on the convolution and dense weights $W$:
+\begin{equation}
+L_{\text{CNN}} = \frac{1}{B}\sum_{i=1}^{B} w_i \big(-\log p(t_i \mid x_i)\big)
++ \lambda_1 \sum |W| + \lambda_2 \sum W^2,
+\end{equation}
+with $\lambda_1 = 10^{-5}$ and $\lambda_2 = 10^{-4}$, for 40 epochs, keeping the epoch
 with the highest validation macro-F1. Runs are tracked with
 MLflow~\cite{zaharia2018mlflow}.
 
@@ -123,7 +135,10 @@ normalisation~\cite{ioffe2015batchnorm} and dropout~\cite{srivastava2014dropout}
 and masks the padding ($\approx$0.48M parameters); it is still training.
 
 \section{Preliminary Results and What We Learned}
-Table~\ref{tab:results} gives the results on the validation set, one run per setup.
+Table~\ref{tab:results} gives the results on the validation set, one run per setup
+on the full training set. For LR, repeated runs on smaller training samples
+(100k domains each, also on validation) gave the same gains with a standard
+deviation of only 0.0002--0.0003, so by our rule family-first wins for LR.
 
 \begin{table}[h]
 \centering
@@ -144,7 +159,9 @@ LR, without TLD & binary & 0.9090 & 0.9227 & 0.8929 & 0.9588 \\
 \midrule
 LR + stacking, without TLD & binary & 0.9140 & 0.9420 & 0.8825 & 0.9622 \\
 LR + PCA 95\%, with TLD & family-first & 0.9243 & 0.9301 & 0.9177 & 0.9796 \\
+LR + PCA 95\%, without TLD & family-first & 0.8999 & 0.9087 & 0.8891 & 0.9559 \\
 LR + LDA 95\%, with TLD & family-first & 0.9409 & 0.9464 & 0.9348 & 0.9861 \\
+LR + LDA 95\%, without TLD & family-first & 0.9117 & 0.9286 & 0.8921 & 0.9603 \\
 \midrule
 Model 2 (reference CNN) & binary & 0.9747 & 0.9753 & 0.9739 & 0.9966 \\
  & family-first & 0.9751 & 0.9772 & 0.9729 & 0.9966 \\
