@@ -30,8 +30,8 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 from sklearn.model_selection import KFold
-
-from src.models.evaluate import binary_metrics, p_dga_from_proba, recall_per_family
+from src.models.evaluate import p_dga_from_proba
+from src.models.metrics import binary_metrics, recall_per_family
 from src.models.logreg import LogReg
 
 METHODS = ["binary", "family", "stack_probs", "stack_both"]
