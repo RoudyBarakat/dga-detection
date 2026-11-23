@@ -25,7 +25,7 @@
 \author{
   Roudy Barakat \quad \texttt{rtb07@mail.aub.edu} \qquad
   Abdo Sebaali \quad \texttt{ams86@mail.aub.edu} \\[0.2em]
-  \small American University of Beirut, EECE 690
+  \small American University of Beirut, EECE 690 \quad \url{https://github.com/RoudyBarakat/dga-detection}
 }
 \date{\vspace{-2.2em}}
 
@@ -76,7 +76,7 @@ so a domain the model believes is a DGA of an unknown family is still flagged.
 \node[box] (x) {domain $x$\\ \texttt{gqspwpsurdun.ru}};
 \node[box, right=0.9cm of x, yshift=0.8cm] (f) {74 hand-crafted\\features};
 \node[box, right=0.9cm of x, yshift=-0.8cm] (c) {characters\\(ASCII codes)};
-\node[box, right=0.6cm of f] (lr) {LR\\(Model 1)};
+\node[box, right=0.6cm of f] (lr) {LR, MLP\\(Models 1, 3)};
 \node[box, right=0.6cm of c] (cnn) {CNN\\(Models 2, 2b)};
 \node[box, right=0.9cm of lr, yshift=-0.8cm] (p) {$p(\cdot\mid x)$ over\\2 or 104 classes};
 \node[box, right=0.7cm of p] (s) {$s(x) = p(\text{DGA}\mid x)$\\or $1 - p(\texttt{legit}\mid x)$};
@@ -111,6 +111,11 @@ by full-batch L-BFGS~\cite{liu1989lbfgs,virtanen2020scipy} on the whole training
 features with \emph{PCA}~\cite{jolliffe2002pca} or \emph{LDA}~\cite{fisher1936lda}
 to the number of components that keeps 95\% or 99\% of the variance.
 
+\textbf{Model 3: MLP on the same features.} To vary only the model's flexibility,
+an MLP maps the same 74 features through two ReLU layers (128 and 64 units, dropout
+0.1; $\approx$25k parameters) to 2 or 104 outputs, trained like the CNN below
+(Adam, 30 epochs).
+
 \textbf{Model 2: reference CNN.} We re-run the character-level CNN of
 \citet{gregorio2024incremental} in PyTorch~\cite{paszke2019pytorch}: an embedding
 of the 93 padded ASCII codes, six convolutions with ReLU in three blocks, a
@@ -135,14 +140,13 @@ normalisation~\cite{ioffe2015batchnorm} and dropout~\cite{srivastava2014dropout}
 and masks the padding ($\approx$0.48M parameters); it is still training.
 
 \section{Preliminary Results and What We Learned}
-Table~\ref{tab:results} gives the results on the validation set, one run per setup
-on the full training set. For LR, repeated runs on smaller training samples
-(100k domains each, also on validation) gave the same gains with a standard
-deviation of only 0.0002--0.0003, so by our rule family-first wins for LR.
+Table~\ref{tab:results}: validation, full training set, one run per setup. For LR,
+repeated runs on 100k-domain samples gave the same gains with a standard deviation of
+only 0.0002--0.0003, so by our rule family-first wins for LR.
 
 \begin{table}[h]
 \centering
-\small
+\footnotesize
 \caption{Validation results on the DGA/legitimate decision. $\Delta$:
 family-first minus binary. A majority-class predictor reaches macro-F1 0.3333.}
 \label{tab:results}
@@ -157,11 +161,18 @@ LR, without TLD & binary & 0.9090 & 0.9227 & 0.8929 & 0.9588 \\
  & family-first & 0.9151 & 0.9319 & 0.8958 & 0.9641 \\
  & $\Delta$ & $+0.0061$ & $+0.0092$ & $+0.0029$ & $+0.0052$ \\
 \midrule
+LR + stacking, with TLD & binary & 0.9351 & 0.9585 & 0.9097 & 0.9831 \\
 LR + stacking, without TLD & binary & 0.9140 & 0.9420 & 0.8825 & 0.9622 \\
 LR + PCA 95\%, with TLD & family-first & 0.9243 & 0.9301 & 0.9177 & 0.9796 \\
-LR + PCA 95\%, without TLD & family-first & 0.8999 & 0.9087 & 0.8891 & 0.9559 \\
 LR + LDA 95\%, with TLD & family-first & 0.9409 & 0.9464 & 0.9348 & 0.9861 \\
-LR + LDA 95\%, without TLD & family-first & 0.9117 & 0.9286 & 0.8921 & 0.9603 \\
+\midrule
+Model 3 (MLP), with TLD & binary & 0.9567 & 0.9616 & 0.9513 & 0.9918 \\
+ & family-first & 0.9567 & 0.9602 & 0.9528 & 0.9921 \\
+ & $\Delta$ & $-0.0000$ & $-0.0014$ & $+0.0014$ & $+0.0003$ \\
+MLP, without TLD & binary & 0.9295 & 0.9500 & 0.9069 & 0.9739 \\
+ & family-first & 0.9313 & 0.9499 & 0.9107 & 0.9747 \\
+ & $\Delta$ & $+0.0017$ & $-0.0001$ & $+0.0038$ & $+0.0008$ \\
+MLP + stacking, with TLD & binary & 0.9559 & 0.9612 & 0.9501 & 0.9919 \\
 \midrule
 Model 2 (reference CNN) & binary & 0.9747 & 0.9753 & 0.9739 & 0.9966 \\
  & family-first & 0.9751 & 0.9772 & 0.9729 & 0.9966 \\
@@ -179,47 +190,37 @@ Model 2b (revised CNN) & both & \multicolumn{4}{c}{\emph{pending: training in pr
   draw only one boundary between legitimate names and all DGA families together;
   family-first gives it one boundary per family. The TLD makes the gain about
   three times larger, since many families use their own few suffixes.
-  \item \emph{They barely change the CNN:} $\Delta = +0.0004$, with ROC-AUC equal
-  at 0.9966. The CNN learns each family's patterns from the binary label alone,
-  so the gain shrinks as the model gets more flexible. With one run per setup,
-  $+0.0004$ cannot yet be told apart from run-to-run variation.
-  \item \emph{The simple collapse is best:} stacking beats binary ($+0.0050$) but
-  stays 0.0011 below plain family-first. PCA lowers macro-F1, since it ignores the
-  labels; LDA, which uses them, matches all features with 55 of the 74 dimensions.
+  \item \emph{They barely change the flexible models:} on the same features the
+  MLP gains $0.0000$ with the TLD ($+0.0017$ without), and the CNN $+0.0004$. A
+  non-linear model learns each family's patterns from the binary label alone, so the
+  gain shrinks as the model gets more flexible.
+  \item \emph{Non-linearity helps:} the MLP beats LR by $+0.017$ to $+0.036$; a
+  larger MLP scores the same, so the features now limit it.
+  \item \emph{The simple collapse is best:} stacking stays below family-first for LR
+  ($-0.0046$, $-0.0011$) and the MLP ($-0.0008$); PCA lowers macro-F1; LDA matches all features.
   \item \emph{The CNN overfits early:} its validation loss is lowest at epoch 9
   (binary) and 13 (family-first); Model 2b adds regularisation for this.
-  \item \emph{Hard case:} dictionary DGAs such as matsnu and nymaim2 look
-  legitimate to the name features and are mostly missed.
+  \item \emph{Hard case:} dictionary DGAs (matsnu, nymaim2) are mostly missed.
 \end{itemize}
 
 \section{Updated Plan and Risks}
 \textbf{Plan.}
 \begin{enumerate}
   \item Revised CNN (Model 2b) in both setups, compared with Model 2 (Nov 16--22).
-  \item Uncertainty of $\Delta$: repeated seeds and a paired bootstrap on the
-  saved predictions; both CNNs without the TLD; recall per family (Nov 23--29).
-  \item Further models in both setups: an MLP on the 74 features, a convolutional
-  autoencoder~\cite{masci2011cae}, a character-level
-  Transformer~\cite{vaswani2017attention} for dictionary DGAs, and CNN embeddings
-  joined with the hand-crafted features (Nov 23--29).
-  \item One run of every final configuration on the test set; final report and
-  presentation (Nov 30--Dec 6).
+  \item Uncertainty of $\Delta$ (repeated seeds, paired bootstrap); both CNNs
+  without the TLD (Nov 23--29).
+  \item Word features for dictionary DGAs (number of dictionary words, coverage,
+  longest word); CNN embeddings joined with the features; a convolutional
+  autoencoder~\cite{masci2011cae} and a Transformer~\cite{vaswani2017attention} (Nov 23--29).
+  \item Every final configuration on the test set; final report and presentation
+  (Nov 30--Dec 6).
 \end{enumerate}
 
-\textbf{Risks.}
-\begin{itemize}
-  \item \emph{Small CNN gain:} $\Delta = +0.0004$ may be noise; the uncertainty
-  estimate will decide.
-  \item \emph{TLD shortcut:} 23 families use a single TLD, so the TLD alone
-  separates them; we report every model with and without it.
-  \item \emph{Data bias and validity:} Tranco favours popular sites, so unusual
-  legitimate names may be flagged; we test only known families, and accuracy can
-  drop on unseen ones~\cite{dahal2019autoencoded}.
-  \item \emph{Compute time:} family-first training on 1.6M domains is slow (about
-  25 minutes per LR fit, much longer per CNN), which limits the number of repeated runs.
-\end{itemize}
+\textbf{Risks.} The small $\Delta$ of the MLP and CNN may be noise;
+23 families use a single TLD, so we report every model with and
+without it; Tranco favours popular sites, and we test only known
+families~\cite{dahal2019autoencoded}.
 
-\textbf{Code:} \url{https://github.com/RoudyBarakat/dga-detection}.
 
 \bibliographystyle{plainnat}
 \bibliography{refs}
