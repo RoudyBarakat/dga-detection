@@ -21,7 +21,8 @@ src/
   data/         build, balance and explore the dataset; dataset.py loads the splits
   features/     hand-crafted features (split, character, n-gram, Markov, vowel, TLD);
                 build.py computes all 74 and caches them in data/processed/features/
-  models/       character CNNs (charcnn.py: the paper's; charcnn2.py: revised), input
+  models/       character CNNs (charcnn.py: the paper's; charcnn2.py: revised;
+                charcnn3.py: name and ending pooled apart), input
                 encoding, training loop with checkpoints
                 (train.py), MLflow tracking for every notebook (tracking.py), training
                 and latent-space plots (plots.py), the latent space of the CNNs
@@ -35,6 +36,8 @@ notebooks/
   04_features.ipynb       the 74 hand-crafted features, step by step
   05_logreg_features.ipynb  logistic regression (Model 1) on the hand-crafted features
   06_charcnn2.ipynb       revised character-level CNN (Model 2b), compared with Model 2
+  07_charcnn3.ipynb       CNN with the name and the ending pooled apart (Model 2c),
+                          compared with Model 2 and Model 2b
 notes/          findings.md: things we discovered about the data
 proposal/       LaTeX proposal (proposal.tex, refs.bib, figures/, proposal.pdf)
 ```
@@ -137,6 +140,17 @@ jupyter notebook
   `checkpoints/checkpoints_binary_cnn2_<run>/` and
   `checkpoints/checkpoints_multifamily_cnn2_<run>/` (not committed), and tracked in the
   MLflow experiment `charcnn`, with the runs of 03.
+- `07_charcnn3.ipynb` trains Model 2c, Model 2b with two changes at the end of the
+  network (`src/models/charcnn3.py`), aimed at its errors on short names: each filter
+  is pooled over the name and over the ending (the public suffix) apart, with the
+  length of both parts, and the lengths are not dropped out. The input marks the
+  characters of the ending (`encode_split`, from the split of `src/features/split.py`).
+  The data, setups, loss and training are those of 06; the notebook compares Model 2,
+  2b and 2c, counts their missed DGA domains and false alarms per name length, and
+  compares the latent spaces of Model 2b and 2c. Training is saved in
+  `checkpoints/checkpoints_binary_cnn3_<run>/` and
+  `checkpoints/checkpoints_multifamily_cnn3_<run>/` (not committed), and tracked in the
+  MLflow experiment `charcnn`.
 
 ## Contributing
 
